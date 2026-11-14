@@ -9,7 +9,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Neon Rush Arena",
   description:
-    "Four arcade games against four AI opponents: Minimax, Alpha-Beta Pruning, A* Search and a Markov predictor.",
+    "Five arcade games against five AI opponents: Minimax, Alpha-Beta Pruning, A* Search, Monte Carlo Tree Search and a probability heat map.",
 };
 
 export const viewport: Viewport = {

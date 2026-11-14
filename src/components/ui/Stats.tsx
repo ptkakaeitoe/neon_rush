@@ -25,8 +25,8 @@ export function ResultStrip({ results, max }: { results: Result[]; max: number }
 
 /* ---------------- W · D · L ---------------- */
 
-/** Games that can end in a draw show the D column; maze and RPS matches always end in a win or a loss. */
-const CAN_DRAW: Record<GameId, boolean> = { tictactoe: true, connect4: true, maze: false, rps: false };
+/** Games that can end in a draw show the D column; maze and battleship always end in a win or a loss. */
+const CAN_DRAW: Record<GameId, boolean> = { tictactoe: true, connect4: true, maze: false, othello: true, battleship: false };
 
 const n = (v: number, one: string, many = `${one}s`) => `${v} ${v === 1 ? one : many}`;
 

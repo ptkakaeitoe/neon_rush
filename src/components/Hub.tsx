@@ -16,7 +16,8 @@ const GAMES: Game[] = [
   { id: "tictactoe", title: "Tic-Tac-Toe", algo: "minimax", desc: "Scores every possible future board to pick a perfect move." },
   { id: "connect4", title: "Connect Four", algo: "α-β pruning", desc: "Searches several moves ahead and skips branches that can’t matter." },
   { id: "maze", title: "Maze Escape", algo: "A* search", desc: "Reach the exit before a hunter finds the shortest path to you." },
-  { id: "rps", title: "Rock Paper Scissors", algo: "markov chain", desc: "Learns your habits and predicts your next throw." },
+  { id: "othello", title: "Othello", algo: "MCTS", desc: "Plays thousands of random games ahead and picks the move that wins most." },
+  { id: "battleship", title: "Battleship", algo: "probability map", desc: "Keeps a heat map of where your ships could be and fires at the likeliest cell." },
 ];
 
 function GameRow({ g, i }: { g: Game; i: number }) {
@@ -78,10 +79,10 @@ export function Hub() {
   return (
     <div className={`${CONTAINER} flex flex-1 flex-col pt-10 sm:pt-16`}>
       <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: EASE }}>
-        <p className="label-pixel">Arcade · 4 games</p>
+        <p className="label-pixel">Arcade · 5 games</p>
         <h1 className="font-display mt-4 text-5xl font-semibold text-ink sm:text-7xl">Choose a game</h1>
         <p className="mt-5 max-w-[60ch] text-[15px] tracking-[-0.01em] text-muted">
-          Four opponents, four AI algorithms. Hover or focus a game to watch its algorithm think.
+          Five opponents, five AI algorithms. Hover or focus a game to watch its algorithm think.
         </p>
       </motion.section>
 
@@ -94,7 +95,7 @@ export function Hub() {
       </nav>
 
       <footer className="mt-auto flex flex-wrap items-center justify-between gap-4 pb-10 pt-16 text-xs text-muted">
-        <span>Four algorithms. No libraries.</span>
+        <span>Five algorithms. No libraries.</span>
         {REPO_URL && (
           <a href={REPO_URL} target="_blank" rel="noreferrer" className="rounded transition-colors duration-150 hover:text-ink">
             Source on GitHub ↗

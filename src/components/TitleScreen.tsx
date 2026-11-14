@@ -8,7 +8,7 @@ import { PixelButton } from "./ui/PixelButton";
 import { BOT, BOT_PALETTE, PixelSprite } from "./ui/PixelSprite";
 import { CONTAINER } from "@/lib/layout";
 
-const ALGOS = ["minimax", "α-β pruning", "A* search", "markov chain"];
+const ALGOS = ["minimax", "α-β pruning", "A* search", "MCTS", "probability map"];
 
 export function TitleScreen() {
   const { go } = useArcade();
@@ -58,7 +58,7 @@ export function TitleScreen() {
         transition={{ delay: 0.16, duration: 0.25 }}
         className="mt-6 max-w-md text-[15px] text-muted"
       >
-        Four arcade games. Four AI opponents. Watch each one think as it plays.
+        Five arcade games. Five AI opponents. Watch each one think as it plays.
       </motion.p>
 
       <motion.div

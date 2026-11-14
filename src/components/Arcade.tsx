@@ -5,7 +5,8 @@ import { useLayoutEffect } from "react";
 import { ArcadeProvider, type GameId, useArcade } from "./ArcadeProvider";
 import { ConnectFour } from "./games/ConnectFour";
 import { MazeEscape } from "./games/MazeEscape";
-import { RockPaperScissors } from "./games/RockPaperScissors";
+import { Battleship } from "./games/Battleship";
+import { Othello } from "./games/Othello";
 import { TicTacToe } from "./games/TicTacToe";
 import { Hub } from "./Hub";
 import { Hud } from "./Hud";
@@ -15,7 +16,8 @@ const GAMES: Record<GameId, React.ComponentType> = {
   tictactoe: TicTacToe,
   connect4: ConnectFour,
   maze: MazeEscape,
-  rps: RockPaperScissors,
+  othello: Othello,
+  battleship: Battleship,
 };
 
 /** Tells a pending View Transition that the new screen is in the DOM. */

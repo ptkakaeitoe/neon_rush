@@ -11,7 +11,7 @@
  */
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 
-export type GameId = "tictactoe" | "connect4" | "maze" | "rps";
+export type GameId = "tictactoe" | "connect4" | "maze" | "othello" | "battleship";
 export type Difficulty = "easy" | "medium" | "hard" | "unbeatable";
 export const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard", "unbeatable"];
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = { easy: "Easy", medium: "Medium", hard: "Hard", unbeatable: "Max" };
@@ -23,11 +23,17 @@ export type GameStats = Record<Difficulty, Tally>;
 type Store = Record<GameId, GameStats>;
 
 const KEY = "neonrush:stats:v1";
-const GAME_IDS: GameId[] = ["tictactoe", "connect4", "maze", "rps"];
+const GAME_IDS: GameId[] = ["tictactoe", "connect4", "maze", "othello", "battleship"];
 
 const zero = (): Tally => ({ w: 0, d: 0, l: 0 });
 const emptyGame = (): GameStats => ({ easy: zero(), medium: zero(), hard: zero(), unbeatable: zero() });
-const emptyStore = (): Store => ({ tictactoe: emptyGame(), connect4: emptyGame(), maze: emptyGame(), rps: emptyGame() });
+const emptyStore = (): Store => ({
+  tictactoe: emptyGame(),
+  connect4: emptyGame(),
+  maze: emptyGame(),
+  othello: emptyGame(),
+  battleship: emptyGame(),
+});
 
 /* ---------------- validation ---------------- */
 

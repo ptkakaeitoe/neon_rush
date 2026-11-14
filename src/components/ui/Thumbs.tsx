@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * One consistent thumbnail system for the four games.
+ * One consistent thumbnail system for the five games.
  * Every tile is a 112×112 SVG on the same surface with the same 1px border and 1.5px strokes.
  * At rest it shows the game; while `active` (row hovered / focused) it loops a short
  * animation of the game's algorithm at work. Reduced motion shows the final frame, still.
@@ -35,79 +35,6 @@ function Tile({ children, label }: { children: React.ReactNode; label: string })
   return (
     <svg viewBox="0 0 112 112" width="112" height="112" role="img" aria-label={label} className="block h-full w-full">
       {children}
-    </svg>
-  );
-}
-
-/* ---------------- rock / paper / scissors pixel glyphs ---------------- */
-
-// Hand shapes on a 12×12 pixel grid: fist, flat palm, two fingers.
-const GLYPHS = {
-  R: [
-    "............",
-    "...XX.XX.XX.",
-    "..XXXXXXXXX.",
-    "..XXXXXXXXX.",
-    ".XXXXXXXXXX.",
-    ".XX.XXXXXXX.",
-    ".XXX..XXXXX.",
-    ".XXXXXXXXXX.",
-    "..XXXXXXXX..",
-    "...XXXXXXX..",
-    "....XXXXXX..",
-    "............",
-  ],
-  P: [
-    ".....X.X....",
-    "...X.X.X.X..",
-    "...X.X.X.X..",
-    "...X.X.X.X..",
-    "...XXXXXXX..",
-    ".X.XXXXXXX..",
-    ".XXXXXXXXX..",
-    "..XXXXXXXX..",
-    "...XXXXXXX..",
-    "...XXXXXXX..",
-    "....XXXXX...",
-    "....XXXXX...",
-  ],
-  S: [
-    "...X.....X..",
-    "...XX...XX..",
-    "....X...X...",
-    "....XX.XX...",
-    ".....X.X....",
-    "....XXXXX...",
-    "...XXXXXXX..",
-    "...XXXXXXX..",
-    "...XXXXXXX..",
-    "....XXXXX...",
-    "....XXXXX...",
-    "............",
-  ],
-} as const;
-export type RpsMove = keyof typeof GLYPHS;
-
-/** Pixel-art rock / paper / scissors. Used in the thumbnail and in the game itself. */
-export function RpsGlyph({ move, size = 64, color = INK, title }: { move: RpsMove; size?: number; color?: string; title?: string }) {
-  const map = GLYPHS[move];
-  return (
-    <svg
-      viewBox="0 0 12 12"
-      width={size}
-      height={size}
-      shapeRendering="crispEdges"
-      role={title ? "img" : undefined}
-      aria-label={title}
-      aria-hidden={title ? undefined : true}
-    >
-      {map.flatMap((row, y) =>
-        [...row].map((ch, x) =>
-          ch === "X" ? (
-            <rect key={`${x}-${y}`} x={x} y={y} width={1.02} height={1.02} style={{ fill: color }} />
-          ) : null,
-        ),
-      )}
     </svg>
   );
 }
@@ -356,70 +283,141 @@ function AStarLoop({ still }: { still: boolean }) {
   );
 }
 
-/* ---------------- rock paper scissors + markov ---------------- */
+/* ---------------- othello + MCTS ---------------- */
 
-function RpsStatic() {
+const OTH: Record<string, "you" | "ai"> = {
+  "1-1": "ai", "1-2": "you", "2-1": "you", "2-2": "ai", "0-2": "you", "2-3": "you", "3-1": "ai", "1-3": "ai",
+};
+
+function OthelloStatic() {
+  const n = 4, cell = 20, o = 16;
   return (
     <g>
-      {(["R", "P", "S"] as const).map((m, i) => (
-        <svg key={m} x={8 + i * 33} y={41} width={30} height={30} overflow="visible">
-          <RpsGlyph move={m} size={30} color={i === 1 ? ACCENT : INK} />
-        </svg>
+      {Array.from({ length: n + 1 }, (_, k) => (
+        <g key={k} stroke={LINE} strokeWidth={1.5}>
+          <line x1={o} y1={o + k * cell} x2={o + n * cell} y2={o + k * cell} />
+          <line x1={o + k * cell} y1={o} x2={o + k * cell} y2={o + n * cell} />
+        </g>
       ))}
+      {Object.entries(OTH).map(([k, who]) => {
+        const [r, c] = k.split("-").map(Number);
+        return <circle key={k} cx={o + c * cell + cell / 2} cy={o + r * cell + cell / 2} r={6.5} fill={who === "you" ? ACCENT : INK} />;
+      })}
     </g>
   );
 }
 
-// transition probabilities "after R → next" etc. Two frames the matrix morphs between.
-const MATRIX_A = [[0.2, 0.6, 0.2], [0.3, 0.2, 0.5], [0.5, 0.3, 0.2]];
-const MATRIX_B = [[0.15, 0.7, 0.15], [0.2, 0.15, 0.65], [0.6, 0.25, 0.15]];
-const LAST_ROW = 0; // you just threw Rock…
-const PREDICT_COL = 1; // …so you'll probably throw Paper
+// four candidate moves under the root; bar height = simulations spent on each
+const MCTS_X = [22, 44, 68, 90];
+const MCTS_VISITS = [0.3, 1, 0.55, 0.18];
+const MCTS_BEST = 1;
 
-function MarkovLoop({ still }: { still: boolean }) {
-  // origins measured so labels + grid + highlight sit centred in the 112 tile (equal margins)
-  const x0 = 24.35, y0 = 28.1, s = 22, g = 3;
-  const decideAt = still ? 0 : 1.3;
+function MctsLoop({ still }: { still: boolean }) {
+  const root = { x: 56, y: 18 };
+  const childY = 46;
+  const barTop = 56;
+  const barMax = 44;
+  const grow = still ? 0 : 1.1;
   return (
-    <g fontFamily="var(--font-mono-face)" fontSize="9">
-      {["R", "P", "S"].map((m, i) => (
-        <g key={m} fill={MUTED}>
-          <text x={x0 + i * (s + g) + s / 2} y={y0 - 7} textAnchor="middle">{m}</text>
-          <text x={x0 - 9} y={y0 + i * (s + g) + s / 2 + 3} textAnchor="middle">{m}</text>
+    <g>
+      {MCTS_X.map((x, i) => (
+        <motion.line
+          key={`e${i}`}
+          x1={root.x} y1={root.y} x2={x} y2={childY}
+          strokeWidth={1.5}
+          initial={{ pathLength: still ? 1 : 0, stroke: LINE }}
+          animate={{ pathLength: 1, stroke: i === MCTS_BEST ? (still ? ACCENT : [MUTED, MUTED, ACCENT]) : MUTED }}
+          transition={{ pathLength: { delay: still ? 0 : i * 0.06, duration: 0.2 }, stroke: { delay: still ? 0 : grow + 0.15, duration: 0.25, times: [0, 0.01, 1] } }}
+        />
+      ))}
+      <rect x={root.x - 3} y={root.y - 3} width={6} height={6} fill={i0Fill(still)} />
+      {MCTS_X.map((x, i) => (
+        <g key={`c${i}`}>
+          <rect x={x - 3} y={childY - 3} width={6} height={6} fill={MUTED} />
+          <rect x={x - 4} y={barTop} width={8} height={barMax} fill="rgba(255, 255, 255, 0.05)" />
+          <motion.rect
+            x={x - 4}
+            width={8}
+            fill={i === MCTS_BEST ? ACCENT : MUTED}
+            initial={{ y: still ? barTop + barMax * (1 - MCTS_VISITS[i]) : barTop + barMax, height: still ? barMax * MCTS_VISITS[i] : 0 }}
+            animate={{ y: barTop + barMax * (1 - MCTS_VISITS[i]), height: barMax * MCTS_VISITS[i] }}
+            transition={{ duration: grow, ease: EASE, delay: still ? 0 : 0.25 }}
+          />
         </g>
       ))}
-      {MATRIX_A.flatMap((row, r) =>
-        row.map((v, c) => {
-          const pick = r === LAST_ROW && c === PREDICT_COL;
-          const x = x0 + c * (s + g), y = y0 + r * (s + g);
-          return (
-            <g key={`${r}-${c}`}>
-              <motion.rect
-                x={x} y={y} width={s} height={s} fill={MUTED}
-                initial={{ opacity: still ? MATRIX_B[r][c] * 0.6 : v }}
-                animate={{ opacity: still ? MATRIX_B[r][c] * 0.6 : [v, MATRIX_B[r][c], v * 0.9, MATRIX_B[r][c] * 0.6] }}
-                transition={{ duration: decideAt, times: [0, 0.35, 0.7, 1], ease: EASE }}
-              />
-              {pick && (
-                /* the prediction lights up once the model has decided */
-                <motion.rect
-                  x={x} y={y} width={s} height={s} fill={ACCENT}
-                  initial={{ opacity: still ? 1 : 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: decideAt, duration: 0.2, ease: EASE }}
-                />
-              )}
-            </g>
-          );
-        }),
-      )}
-      {/* row the model is reading from */}
+    </g>
+  );
+}
+const i0Fill = (still: boolean) => (still ? ACCENT : MUTED);
+
+/* ---------------- battleship + probability map ---------------- */
+
+const BS_N = 7;
+const BS_CELL = 12;
+const BS_O = (112 - BS_N * BS_CELL) / 2;
+const BS_SHIP = [9, 16, 23]; // vertical 3-ship at column 2
+const BS_HIT = 16;
+const BS_MISS = [3, 26, 33, 40, 12];
+// heat: a peak around the open hit's neighbours, decaying with distance
+const BS_PEAK = 23;
+const BS_HEAT = Array.from({ length: BS_N * BS_N }, (_, i) => {
+  if (i === BS_HIT || BS_MISS.includes(i)) return 0;
+  const r = Math.floor(i / BS_N), c = i % BS_N;
+  const pr = Math.floor(BS_PEAK / BS_N), pc = BS_PEAK % BS_N;
+  return Math.max(0.08, 1 - (Math.abs(r - pr) + Math.abs(c - pc)) * 0.22);
+});
+
+function BattleshipStatic() {
+  return (
+    <g>
+      {Array.from({ length: BS_N * BS_N }, (_, i) => {
+        const x = BS_O + (i % BS_N) * BS_CELL, y = BS_O + Math.floor(i / BS_N) * BS_CELL;
+        const ship = BS_SHIP.includes(i);
+        return (
+          <g key={i}>
+            <rect x={x + 1} y={y + 1} width={BS_CELL - 2} height={BS_CELL - 2} fill={ship ? "rgba(255, 255, 255, 0.16)" : "none"} stroke={ship ? "none" : LINE} strokeWidth={1} />
+            {i === BS_HIT && <rect x={x + 3} y={y + 3} width={BS_CELL - 6} height={BS_CELL - 6} fill={ACCENT} />}
+            {BS_MISS.includes(i) && <circle cx={x + BS_CELL / 2} cy={y + BS_CELL / 2} r={1.3} fill={MUTED} />}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+function HeatLoop({ still }: { still: boolean }) {
+  const settle = still ? 0 : 1.1;
+  return (
+    <g>
+      {BS_HEAT.map((h, i) => {
+        const x = BS_O + (i % BS_N) * BS_CELL, y = BS_O + Math.floor(i / BS_N) * BS_CELL;
+        return (
+          <g key={i}>
+            <rect x={x + 1} y={y + 1} width={BS_CELL - 2} height={BS_CELL - 2} fill="none" stroke={LINE} strokeWidth={1} />
+            <motion.rect
+              x={x + 1} y={y + 1} width={BS_CELL - 2} height={BS_CELL - 2}
+              fill={ACCENT}
+              initial={{ opacity: still ? h * 0.6 : 0.12 }}
+              animate={{ opacity: still ? h * 0.6 : [0.12, 0.25 + ((i * 7) % 5) * 0.08, h * 0.6] }}
+              transition={{ duration: settle, ease: EASE, times: [0, 0.4, 1] }}
+            />
+            {i === BS_HIT && <rect x={x + 3} y={y + 3} width={BS_CELL - 6} height={BS_CELL - 6} fill={INK} />}
+            {BS_MISS.includes(i) && <circle cx={x + BS_CELL / 2} cy={y + BS_CELL / 2} r={1.3} fill={MUTED} />}
+          </g>
+        );
+      })}
+      {/* the AI's pick: the hottest cell */}
       <motion.rect
-        x={x0 - 3} y={y0 + LAST_ROW * (s + g) - 3} width={3 * s + 2 * g + 6} height={s + 6}
-        fill="none" stroke={INK} strokeWidth={1.5}
+        x={BS_O + (BS_PEAK % BS_N) * BS_CELL - 1}
+        y={BS_O + Math.floor(BS_PEAK / BS_N) * BS_CELL - 1}
+        width={BS_CELL + 2}
+        height={BS_CELL + 2}
+        fill="none"
+        stroke={INK}
+        strokeWidth={1.5}
         initial={{ opacity: still ? 1 : 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: still ? 0 : 0.5, duration: 0.2 }}
+        transition={{ delay: settle, duration: 0.2 }}
       />
     </g>
   );
@@ -431,7 +429,8 @@ const LABELS: Record<GameId, string> = {
   tictactoe: "Tic-tac-toe board; on hover, a minimax game tree",
   connect4: "Connect Four grid; on hover, an alpha-beta tree with pruned branches",
   maze: "Maze; on hover, A* search exploring then drawing the path",
-  rps: "Rock, paper, scissors glyphs; on hover, a Markov transition matrix",
+  othello: "Othello board; on hover, MCTS spending simulations on four candidate moves",
+  battleship: "Battleship grid; on hover, a probability heat map converging on the likeliest cell",
 };
 
 export function GameThumb({ id, active }: { id: GameId; active: boolean }) {
@@ -454,9 +453,13 @@ export function GameThumb({ id, active }: { id: GameId; active: boolean }) {
       rest = <MazeStatic />;
       algo = <AStarLoop key={n} still={still} />;
       break;
-    case "rps":
-      rest = <RpsStatic />;
-      algo = <MarkovLoop key={n} still={still} />;
+    case "othello":
+      rest = <OthelloStatic />;
+      algo = <MctsLoop key={n} still={still} />;
+      break;
+    case "battleship":
+      rest = <BattleshipStatic />;
+      algo = <HeatLoop key={n} still={still} />;
       break;
   }
 
