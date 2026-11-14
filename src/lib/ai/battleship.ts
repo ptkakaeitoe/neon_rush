@@ -97,6 +97,7 @@ export function heatmap(know: K[], remaining: number[], hitBoost = 30): Heat {
   return { counts, placements, max };
 }
 
+/** `odds` = the target cell's share of all heat on the board (how concentrated the AI's belief is). */
 export type AiShot = { idx: number; heat: Heat; odds: number };
 
 /**

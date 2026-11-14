@@ -133,7 +133,7 @@ export function Battleship() {
       keyHints="Arrows move · Enter fires"
       stats={[
         { label: "Placements counted", value: heat?.placements ?? 0 },
-        { label: "Top cell odds", value: Math.round(odds * 1000) / 10, format: (n) => `${n.toFixed(1)}%` },
+        { label: "Heat share", value: Math.round(odds * 1000) / 10, format: (n) => `${n.toFixed(1)}%` },
         { label: "AI hit rate", value: Math.round(aiHitRate * 100), format: (n) => `${Math.round(n)}%` },
       ]}
       toggles={
