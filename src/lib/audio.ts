@@ -34,12 +34,43 @@ const MELODY: number[] = [
   74, 0, 71, 72, 74, 0, 0, 0,
 ];
 
+/** iPhone / iPad (iPadOS reports itself as a Mac with touch). Every browser there is WebKit. */
+const isIOS = () =>
+  typeof navigator !== "undefined" &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+
+/** A short silent WAV as a blob URL, played through an <audio> element to move iOS onto the media channel. */
+function silentWavUrl(): string {
+  const rate = 8000;
+  const samples = rate / 4; // 0.25s
+  const buf = new ArrayBuffer(44 + samples);
+  const v = new DataView(buf);
+  const str = (o: number, t: string) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, "RIFF");
+  v.setUint32(4, 36 + samples, true);
+  str(8, "WAVE");
+  str(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate, true);
+  v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true); // 8-bit
+  str(36, "data");
+  v.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i++) v.setUint8(44 + i, 128); // 8-bit silence
+  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+}
+
 class AudioEngine {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
   private musicBus!: GainNode;
   private sfxBus!: GainNode;
   private noise!: AudioBuffer;
+  private keepAlive: HTMLAudioElement | null = null;
+  private listening = false;
 
   private timer: ReturnType<typeof setInterval> | null = null;
   private step = 0;
@@ -70,8 +101,53 @@ class AudioEngine {
       const data = this.noise.getChannelData(0);
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
       this.applyVolumes();
+      this.listen();
     }
-    if (this.ctx.state === "suspended") void this.ctx.resume();
+    // iOS: play through the media channel so the ring/silent switch doesn't mute the game
+    const nav = navigator as Navigator & { audioSession?: { type: string } };
+    if (nav.audioSession) {
+      try {
+        nav.audioSession.type = "playback";
+      } catch {
+        /* unsupported value */
+      }
+    } else if (isIOS()) {
+      if (!this.keepAlive) {
+        this.keepAlive = new Audio(silentWavUrl());
+        this.keepAlive.loop = true;
+        this.keepAlive.setAttribute("playsinline", "");
+      }
+      void this.keepAlive.play().catch(() => {});
+    }
+    // resume inside the gesture ("suspended" on Chrome, "interrupted" on iOS after a call / app switch)
+    if (this.ctx.state !== "running") void this.ctx.resume().catch(() => {});
+    // WebKit only starts output after something is played during a gesture: a 1-sample silent buffer does it
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+    src.connect(this.ctx.destination);
+    src.start(0);
+  }
+
+  /**
+   * Mobile browsers suspend audio when the page is hidden or the phone locks, and only let it restart
+   * from a user gesture. So: pause while hidden, and re-unlock on the next tap / key anywhere.
+   */
+  private listen() {
+    if (this.listening || typeof window === "undefined") return;
+    this.listening = true;
+    const wake = () => {
+      if (this.ctx && this.ctx.state !== "running" && !document.hidden) this.unlock();
+    };
+    for (const ev of ["touchend", "click", "keydown"]) window.addEventListener(ev, wake, { capture: true, passive: true });
+    document.addEventListener("visibilitychange", () => {
+      if (!this.ctx) return;
+      if (document.hidden) {
+        void this.ctx.suspend().catch(() => {});
+        this.keepAlive?.pause();
+      } else {
+        void this.ctx.resume().catch(() => {});
+      }
+    });
   }
 
   private applyVolumes() {
@@ -114,6 +190,8 @@ class AudioEngine {
   private schedule() {
     if (!this.ctx) return;
     const sixteenth = 60 / this.bpm / 4;
+    if (this.ctx.state !== "running") return;
+    if (this.nextTime < this.ctx.currentTime) this.nextTime = this.ctx.currentTime + 0.05; // skip what was missed
     while (this.nextTime < this.ctx.currentTime + 0.12) {
       this.playStep(this.step, this.nextTime, sixteenth);
       this.nextTime += sixteenth;

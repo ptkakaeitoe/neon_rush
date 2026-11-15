@@ -68,7 +68,7 @@ function Board({
   const reduce = useReducedMotion();
   const c = (i: number) => ({ x: (i % 3) * 2 + 1, y: Math.floor(i / 3) * 2 + 1 }); // centres in a 6×6 box
   return (
-    <div className="relative">
+    <div className="relative w-[min(26rem,calc(100vw-2rem))] sm:w-auto">
       <div className="grid grid-cols-3 gap-2" role="grid" aria-label="Tic-tac-toe board">
         {board.map((v, i) => {
           const dim = winLine && !winLine.includes(i);
@@ -79,7 +79,7 @@ function Board({
               onClick={() => onCell(i)}
               disabled={!interactive || !!v}
               aria-label={`Cell ${[7, 8, 9, 4, 5, 6, 1, 2, 3][i]}${v ? `, ${v}` : ", empty"}`}
-              className="group relative flex h-24 w-24 items-center justify-center rounded-md border border-line bg-surface transition-[background-color,opacity] duration-200 ease-out enabled:hover:bg-white/[0.04] sm:h-28 sm:w-28 lg:h-32 lg:w-32"
+              className="group relative flex aspect-square w-full items-center justify-center rounded-md border border-line bg-surface transition-[background-color,opacity] duration-200 ease-out enabled:hover:bg-white/[0.04] sm:h-28 sm:w-28 lg:h-32 lg:w-32"
               style={{ opacity: dim ? 0.35 : 1 }}
             >
               {/* AI thinking: tint by how good the move is for the AI, outline the cell being evaluated */}
