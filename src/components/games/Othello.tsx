@@ -2,7 +2,7 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
-import { type Board, count, type Disc, initialBoard, isOver, legalMoves, type MctsResult, mctsMove, play } from "@/lib/ai/othello";
+import { type Board, count, createMcts, type Disc, initialBoard, isOver, legalMoves, type MctsResult, type MoveStat, play } from "@/lib/ai/othello";
 import { type Outcome, useArcade } from "../ArcadeProvider";
 import { GameFrame } from "../GameFrame";
 import { coord, gridKeyDown } from "../ui/gridKeys";
@@ -16,7 +16,8 @@ const LEVEL = {
 } as const;
 const COLOR = { 1: "#8cff73", 2: "#fafafa" } as const;
 const EASE = [0.22, 1, 0.36, 1] as const;
-const AI_DELAY = 380;
+const MIN_THINK = 600; // keep the live search on screen at least this long (ms), even when the budget is shorter
+const SLICE = 12; // ms of search per slice, so the board can redraw between slices
 // 8 columns: ~40px on a 375px phone, 48px max on desktop
 const CELL = "min(3rem, calc((100vw - 2rem - 18px) / 8))";
 
@@ -32,7 +33,9 @@ export function Othello() {
   const [lastAi, setLastAi] = useState(-1);
   const [flipped, setFlipped] = useState<Set<number>>(new Set());
   const [search, setSearch] = useState<Search>(EMPTY_SEARCH);
-  const [showMoves, setShowMoves] = useState(true);
+  const [showThinking, setShowThinking] = useState(true);
+  // live MCTS snapshot while the AI is thinking: visits / win rate per candidate move
+  const [live, setLive] = useState<MoveStat[] | null>(null);
   const [hover, setHover] = useState(-1);
   const [passNote, setPassNote] = useState<string | null>(null);
   const [moves, setMoves] = useState(0);
@@ -73,21 +76,46 @@ export function Othello() {
     apply(board, idx, 1);
   };
 
-  // AI turn
+  // AI turn: run MCTS in small slices so the board shows the search live, then play the most-visited move
   useEffect(() => {
     if (turn !== 2 || result) return;
-    const t = setTimeout(() => {
-      const lvl = LEVEL[difficulty];
-      const res = mctsMove(board, 2, lvl.ms);
+    const lvl = LEVEL[difficulty];
+    const search = createMcts(board, 2);
+    const started = performance.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+
+    const finishTurn = () => {
+      const res = search.snapshot();
       let move = res.move;
       const options = legalMoves(board, 2);
       if (Math.random() < lvl.random && options.length) move = options[Math.floor(Math.random() * options.length)];
+      setLive(null);
       setSearch({ simulations: res.simulations, winRate: res.winRate, ms: res.ms, moves: res.moves, move });
       setLastAi(move);
       sfx("ai");
       apply(board, move, 2);
-    }, reduce ? 0 : AI_DELAY);
-    return () => clearTimeout(t);
+    };
+
+    if (reduce) {
+      search.run(lvl.ms);
+      const t = setTimeout(finishTurn, 0);
+      return () => clearTimeout(t);
+    }
+
+    const tick = () => {
+      if (cancelled) return;
+      const spent = search.snapshot().ms;
+      if (spent < lvl.ms) search.run(Math.min(SLICE, lvl.ms - spent));
+      setLive(search.snapshot().moves);
+      if (search.snapshot().ms >= lvl.ms && performance.now() - started >= MIN_THINK) finishTurn();
+      else timer = setTimeout(tick, 16); // a timer (not rAF) keeps searching even in a background tab
+    };
+    timer = setTimeout(tick, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [turn, result, board, difficulty, apply, sfx, reduce]);
 
   const reset = useCallback(() => {
@@ -98,6 +126,7 @@ export function Othello() {
     setFlipped(new Set());
     setSearch(EMPTY_SEARCH);
     setPassNote(null);
+    setLive(null);
     setMoves(0);
     sfx("click");
   }, [sfx]);
@@ -120,17 +149,17 @@ export function Othello() {
       onReset={reset}
       keyHints="Arrows move · Enter places"
       stats={[
-        { label: "Simulations", value: search.simulations },
+        { label: "Simulations", value: live ? live.reduce((t, m) => t + m.visits, 0) : search.simulations },
         { label: "Chosen move wins", value: Math.round(search.winRate * 100), format: (n) => `${Math.round(n)}%` },
         { label: "Think time", value: search.ms, format: (n) => `${Math.round(n)} ms` },
       ]}
       toggles={
         <label className="flex cursor-pointer items-center gap-2 text-ink">
-          <input type="checkbox" checked={showMoves} onChange={(e) => setShowMoves(e.target.checked)} />
-          Show legal moves
+          <input type="checkbox" checked={showThinking} onChange={(e) => setShowThinking(e.target.checked)} />
+          Show AI thinking
         </label>
       }
-      howItWorks="MCTS plays thousands of random games from each move and picks the one that wins most often."
+      howItWorks="MCTS plays thousands of random games from each move and picks the one that wins most often. While it thinks, each candidate square shows its win rate (%), shaded by how many games it has simulated there."
       details={
         top.length > 0 && (
           <div className="text-xs">
@@ -174,6 +203,9 @@ export function Othello() {
         >
           {board.map((v, i) => {
             const canPlay = legal.includes(i);
+            const cand = showThinking && live ? live.find((m) => m.move === i) : undefined;
+            const leader = cand !== undefined && live?.[0]?.move === i;
+            const share = cand && live ? cand.visits / Math.max(1, live[0].visits) : 0;
             return (
               <button
                 key={i}
@@ -203,8 +235,15 @@ export function Othello() {
                 {v === 0 && canPlay && (hover === i ? (
                   <span className="absolute inset-[14%] rounded-full bg-accent opacity-20" aria-hidden />
                 ) : (
-                  showMoves && <span className="h-1.5 w-1.5 rounded-full bg-muted" aria-hidden />
+                  <span className="h-1.5 w-1.5 rounded-full bg-muted" aria-hidden />
                 ))}
+                {/* AI thinking: live MCTS per candidate: fill = share of simulations, label = win rate */}
+                {cand && (
+                  <span className={`absolute inset-0 flex items-center justify-center rounded-sm ${leader ? "ring-1 ring-inset ring-accent" : ""}`}>
+                    <span className="absolute inset-0 rounded-sm bg-accent transition-opacity duration-100" style={{ opacity: 0.06 + share * 0.3 }} aria-hidden />
+                    <span className={`relative text-[10px] tabular-nums ${leader ? "text-accent" : "text-ink"}`}>{Math.round(cand.winRate * 100)}</span>
+                  </span>
+                )}
               </button>
             );
           })}

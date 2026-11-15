@@ -12,6 +12,7 @@ const DEPTH = { easy: 1, medium: 2, hard: 3, unbeatable: Infinity } as const;
 const BLUNDER = { easy: 0.4, medium: 0.2, hard: 0.1, unbeatable: 0 } as const;
 const EASE = [0.22, 1, 0.36, 1] as const;
 const AI_DELAY = 420;
+const PROBE_STEP = 90; // ms between revealing each candidate's minimax score
 
 // numpad layout: 7 8 9 / 4 5 6 / 1 2 3
 const NUMPAD: Record<string, number> = { "7": 0, "8": 1, "9": 2, "4": 3, "5": 4, "6": 5, "1": 6, "2": 7, "3": 8 };
@@ -27,6 +28,7 @@ function Board({
   board,
   scores,
   showScores,
+  probing,
   lastAi,
   winLine,
   interactive,
@@ -35,6 +37,8 @@ function Board({
   board: Cell[];
   scores: Scores | null;
   showScores: boolean;
+  /** cell the AI is evaluating right now (-1 = none) */
+  probing: number;
   lastAi: number;
   winLine: number[] | null;
   interactive: boolean;
@@ -57,6 +61,11 @@ function Board({
               className="group relative flex h-24 w-24 items-center justify-center rounded-md border border-line bg-surface transition-[background-color,opacity] duration-200 ease-out enabled:hover:bg-white/[0.04] sm:h-28 sm:w-28"
               style={{ opacity: dim ? 0.35 : 1 }}
             >
+              {/* AI thinking: tint by how good the move is for the AI, outline the cell being evaluated */}
+              {showScores && !v && s !== null && s !== undefined && s > 0 && (
+                <span className="absolute inset-0 rounded-md bg-accent transition-opacity duration-200" style={{ opacity: Math.min(0.18, 0.04 + s / 60) }} aria-hidden />
+              )}
+              {probing === i && <span className="absolute inset-0 rounded-md ring-1 ring-inset ring-ink/60" aria-hidden />}
               {/* ghost X on hover */}
               {!v && interactive && (
                 <span className="text-ink opacity-0 transition-opacity duration-150 group-hover:opacity-20 group-focus-visible:opacity-20">
@@ -121,6 +130,7 @@ export function TicTacToe() {
   const [scores, setScores] = useState<Scores | null>(null);
   const [nodes, setNodes] = useState(0);
   const [lastAi, setLastAi] = useState(-1);
+  const [probing, setProbing] = useState(-1);
   const [showScores, setShowScores] = useState(true);
   const [history, setHistory] = useState<Step[]>([]);
   const [replayAt, setReplayAt] = useState<number | null>(null);
@@ -150,18 +160,20 @@ export function TicTacToe() {
     if (!finish(nb)) setAiTurn(true);
   };
 
-  // AI move, with a short minimum "thinking" delay (none with reduced motion)
+  // AI turn: run minimax now, then reveal each candidate's score cell by cell before moving
+  // ("watching it think"). Reduced motion skips the reveal and the delay.
   useEffect(() => {
     if (!aiTurn) return;
-    const t = setTimeout(() => {
-      const res = bestMove(board, DEPTH[difficulty]);
-      let move = res.move;
-      if (Math.random() < BLUNDER[difficulty]) {
-        const empty = board.map((c, i) => (c ? -1 : i)).filter((i) => i >= 0);
-        move = empty[Math.floor(Math.random() * empty.length)];
-      }
+    const res = bestMove(board, DEPTH[difficulty]);
+    let move = res.move;
+    if (Math.random() < BLUNDER[difficulty]) {
+      const empty = board.map((c, i) => (c ? -1 : i)).filter((i) => i >= 0);
+      move = empty[Math.floor(Math.random() * empty.length)];
+    }
+    const commit = () => {
       const nb = [...board];
       nb[move] = "O";
+      setProbing(-1);
       setScores(res.scores);
       setNodes((n) => n + res.nodes);
       setLastAi(move);
@@ -170,8 +182,24 @@ export function TicTacToe() {
       play("ai");
       setAiTurn(false);
       finish(nb);
-    }, reduce ? 0 : AI_DELAY);
-    return () => clearTimeout(t);
+    };
+    if (reduce) {
+      const t = setTimeout(commit, 0);
+      return () => clearTimeout(t);
+    }
+    const empties = board.map((c, i) => (c ? -1 : i)).filter((i) => i >= 0);
+    const timers = empties.map((cell, k) =>
+      setTimeout(() => {
+        setProbing(cell);
+        setScores((prev) => {
+          const next: Scores = k === 0 || !prev ? Array(9).fill(null) : [...prev];
+          next[cell] = res.scores[cell];
+          return next;
+        });
+      }, k * PROBE_STEP),
+    );
+    timers.push(setTimeout(commit, Math.max(AI_DELAY, empties.length * PROBE_STEP + 260)));
+    return () => timers.forEach(clearTimeout);
   }, [aiTurn, board, difficulty, finish, play, reduce]);
 
   const reset = useCallback(() => {
@@ -181,6 +209,7 @@ export function TicTacToe() {
     setScores(null);
     setNodes(0);
     setLastAi(-1);
+    setProbing(-1);
     setHistory([]);
     setReplayAt(null);
     play("click");
@@ -280,10 +309,10 @@ export function TicTacToe() {
       toggles={
         <label className="flex cursor-pointer items-center gap-2 text-ink">
           <input type="checkbox" checked={showScores} onChange={(e) => setShowScores(e.target.checked)} />
-          Show move scores
+          Show AI thinking
         </label>
       }
-      howItWorks="Minimax plays out every future board and picks the move with the best guaranteed outcome."
+      howItWorks="Minimax plays out every future board and picks the move with the best guaranteed outcome. While it thinks, each empty cell shows its score for the AI: positive means good for the AI."
       below={
         result && history.length > 0 ? (
           <Replay steps={replaySteps} at={replayAt} onChange={setReplayAt} />
@@ -294,6 +323,7 @@ export function TicTacToe() {
         board={shownBoard}
         scores={shownScores}
         showScores={showScores && !shownWin}
+        probing={view ? -1 : probing}
         lastAi={view ? (view.by === "O" ? view.move : -1) : lastAi}
         winLine={shownWin?.line ?? null}
         interactive={!aiTurn && !result && replayAt === null}

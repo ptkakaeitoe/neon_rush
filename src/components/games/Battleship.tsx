@@ -14,7 +14,7 @@ const LEVEL = {
   unbeatable: { randomness: 0, hitBoost: 30, parity: true },
 } as const;
 const EASE = [0.22, 1, 0.36, 1] as const;
-const AI_DELAY = 420;
+const AIM_MS = 700; // how long the AI's heat map + crosshair stay up before it fires
 // 10 columns; grids sit side by side on desktop, stacked on phones
 const CELL = "min(1.6rem, calc((100vw - 2rem - 20px) / 10))";
 
@@ -40,6 +40,7 @@ export function Battleship() {
   const [lastAi, setLastAi] = useState(-1);
   const [odds, setOdds] = useState(0);
   const [showHeat, setShowHeat] = useState(true);
+  const [aiming, setAiming] = useState(-1); // cell the AI has picked and is about to fire at
 
   const myHits = new Set([...myShots].filter(([, v]) => v === "hit").map(([k]) => k));
   const aiHitSet = new Set([...aiShots].filter(([, v]) => v === "hit").map(([k]) => k));
@@ -59,23 +60,27 @@ export function Battleship() {
     else setTurn("ai");
   };
 
-  // AI turn: build the heat map, fire at the hottest cell
+  // AI turn: build the heat map and aim at the hottest cell (shown on your fleet), then fire
   useEffect(() => {
     if (turn !== "ai" || result) return;
+    const shot = aiShot(aiKnow, aiRemaining, LEVEL[difficulty]);
+    const aim = setTimeout(() => {
+      setHeat(shot.heat);
+      setOdds(shot.odds);
+      setAiming(shot.idx);
+    }, 0);
     const t = setTimeout(() => {
-      const shot = aiShot(aiKnow, aiRemaining, LEVEL[difficulty]);
+      setAiming(-1);
       setHeat(shot.heat);
       setOdds(shot.odds);
       setLastAi(shot.idx);
       const r = shoot(myFleet, aiHitSet, shot.idx);
       const know = aiKnow.slice();
       know[shot.idx] = r.hit ? K.Hit : K.Miss;
-      let remaining = aiRemaining;
       if (r.sunk) {
         r.sunk.cells.forEach((c) => (know[c] = K.Sunk));
-        const i = remaining.indexOf(r.sunk.len);
-        remaining = remaining.filter((_, j) => j !== i);
-        setAiRemaining(remaining);
+        const i = aiRemaining.indexOf(r.sunk.len);
+        setAiRemaining(aiRemaining.filter((_, j) => j !== i));
       }
       setAiKnow(know);
       const next = new Map(aiShots).set(shot.idx, r.hit ? "hit" : "miss");
@@ -84,8 +89,11 @@ export function Battleship() {
       const hits = new Set([...next].filter(([, v]) => v === "hit").map(([k]) => k));
       if (allSunk(myFleet, hits)) setResult("lose");
       else setTurn("you");
-    }, reduce ? 0 : AI_DELAY);
-    return () => clearTimeout(t);
+    }, reduce ? 0 : AIM_MS);
+    return () => {
+      clearTimeout(aim);
+      clearTimeout(t);
+    };
     // aiHitSet is derived from aiShots
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turn, result, aiKnow, aiRemaining, aiShots, myFleet, difficulty, sfx, reduce]);
@@ -102,6 +110,7 @@ export function Battleship() {
     setResult(null);
     setHeat(null);
     setLastAi(-1);
+    setAiming(-1);
     setOdds(0);
     sfx("click");
   }, [sfx]);
@@ -139,10 +148,10 @@ export function Battleship() {
       toggles={
         <label className="flex cursor-pointer items-center gap-2 text-ink">
           <input type="checkbox" checked={showHeat} onChange={(e) => setShowHeat(e.target.checked)} />
-          Show heat map
+          Show AI thinking
         </label>
       }
-      howItWorks="The AI counts every way your remaining ships could still fit, weights the ones touching its hits, and fires where the most placements overlap."
+      howItWorks="The AI counts every way your remaining ships could still fit, weights the ones touching its hits, and fires where the most placements overlap. The green glow on your fleet is that count; the ring is where it's about to fire."
     >
       <div className="flex flex-col gap-8 sm:flex-row" style={{ ["--bs" as string]: CELL }}>
         {/* enemy waters: where you fire */}
@@ -203,6 +212,15 @@ export function Battleship() {
                   {s === "miss" && <span className="relative h-1 w-1 rounded-full bg-muted" />}
                   {s === "hit" && <span className={`absolute ${mySunk.has(i) ? "inset-0" : "inset-[25%]"} bg-ink`} />}
                   {i === lastAi && <span className="absolute inset-0 ring-1 ring-inset ring-ink" aria-hidden />}
+                  {i === aiming && (
+                    <motion.span
+                      className="absolute -inset-px z-10 ring-2 ring-accent"
+                      initial={{ scale: 1.6, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ duration: 0.25, ease: EASE }}
+                      aria-label="AI is aiming here"
+                    />
+                  )}
                 </div>
               );
             })}

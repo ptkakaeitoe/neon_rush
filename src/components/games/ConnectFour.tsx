@@ -2,7 +2,7 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
-import { type Board, bestColumn, COLS, dropRow, emptyBoard, findWin } from "@/lib/ai/alphabeta";
+import { type Board, bestColumn, COLS, dropRow, emptyBoard, findWin, WIN_SCORE } from "@/lib/ai/alphabeta";
 import { type Outcome, useArcade } from "../ArcadeProvider";
 import { GameFrame } from "../GameFrame";
 import { Replay, type ReplayStep } from "../ui/Replay";
@@ -11,6 +11,10 @@ const DEPTH = { easy: 2, medium: 3, hard: 5, unbeatable: 7 } as const;
 const COLOR = { 1: "#8cff73", 2: "#fafafa" } as const;
 const EASE = [0.22, 1, 0.36, 1] as const;
 const AI_DELAY = 420;
+const PROBE_STEP = 80; // ms between revealing each column's score
+
+/** Column score from the AI's point of view: "win" / "loss" when forced, else the heuristic value. */
+const fmtCol = (v: number) => (v >= WIN_SCORE ? "win" : v <= -WIN_SCORE ? "loss" : v > 0 ? `+${v}` : `${v}`);
 // cell size: ≥44px on a 375px phone, 52px max on desktop
 const CELL = "min(3.25rem, calc((100vw - 2rem - 32px) / 7))";
 
@@ -28,6 +32,9 @@ export function ConnectFour() {
   const [lastAi, setLastAi] = useState<[number, number] | null>(null);
   const [history, setHistory] = useState<Step[]>([]);
   const [replayAt, setReplayAt] = useState<number | null>(null);
+  const [colScores, setColScores] = useState<(number | null)[] | null>(null);
+  const [probeCol, setProbeCol] = useState(-1);
+  const [showThinking, setShowThinking] = useState(true);
 
   const finish = useCallback((b: Board) => {
     const w = findWin(b);
@@ -56,11 +63,14 @@ export function ConnectFour() {
 
   useEffect(() => {
     if (!aiTurn) return;
-    const t = setTimeout(() => {
-      const res = bestColumn(board, DEPTH[difficulty]);
+    // search now, then reveal each column's score in the order alpha-beta tried them (centre first)
+    const res = bestColumn(board, DEPTH[difficulty]);
+    const commit = () => {
       const r = dropRow(board, res.col);
       const nb = board.map((row) => [...row]) as Board;
       nb[r][res.col] = 2;
+      setProbeCol(-1);
+      setColScores(res.scores);
       setSearch({ nodes: res.nodes, pruned: res.pruned, ms: res.ms, col: res.col });
       setLastAi([r, res.col]);
       setBoard(nb);
@@ -68,8 +78,23 @@ export function ConnectFour() {
       play("drop");
       setAiTurn(false);
       finish(nb);
-    }, reduce ? 0 : AI_DELAY);
-    return () => clearTimeout(t);
+    };
+    if (reduce) {
+      const t = setTimeout(commit, 0);
+      return () => clearTimeout(t);
+    }
+    const timers = res.order.map((c, k) =>
+      setTimeout(() => {
+        setProbeCol(c);
+        setColScores((prev) => {
+          const next = k === 0 || !prev ? Array<number | null>(COLS).fill(null) : [...prev];
+          next[c] = res.scores[c];
+          return next;
+        });
+      }, k * PROBE_STEP),
+    );
+    timers.push(setTimeout(commit, Math.max(AI_DELAY, res.order.length * PROBE_STEP + 260)));
+    return () => timers.forEach(clearTimeout);
   }, [aiTurn, board, difficulty, finish, play, reduce]);
 
   // 1–7 drop
@@ -91,6 +116,8 @@ export function ConnectFour() {
     setLastAi(null);
     setHistory([]);
     setReplayAt(null);
+    setColScores(null);
+    setProbeCol(-1);
     play("click");
   }, [play]);
 
@@ -155,10 +182,18 @@ export function ConnectFour() {
           </div>
         )
       }
-      howItWorks="Alpha-beta searches ahead like minimax but skips branches that can't change the decision."
+      toggles={
+        <label className="flex cursor-pointer items-center gap-2 text-ink">
+          <input type="checkbox" checked={showThinking} onChange={(e) => setShowThinking(e.target.checked)} />
+          Show AI thinking
+        </label>
+      }
+      howItWorks="Alpha-beta searches ahead like minimax but skips branches that can't change the decision. While it thinks, each column shows its score for the AI, tried centre-first."
       below={history.length > 0 && result ? <Replay steps={steps} at={replayAt} onChange={setReplayAt} /> : null}
     >
       <div style={{ ["--cell" as string]: CELL }}>
+        {/* AI thinking: each column's alpha-beta score (AI's view), revealed in search order */}
+        <ColumnScores scores={showThinking && !view ? colScores : null} probe={probeCol} chosen={aiTurn ? -1 : search.col} />
         {/* drop indicator row */}
         <div className="mb-2 grid gap-1 px-1 sm:gap-1.5 sm:px-2.5" style={{ gridTemplateColumns: `repeat(${COLS}, var(--cell))` }} aria-hidden>
           {Array.from({ length: COLS }, (_, c) => (
@@ -231,4 +266,39 @@ export function ConnectFour() {
 function dropRowOf(b: Board, col: number) {
   for (let r = 0; r < b.length; r++) if (b[r][col] !== 0) return r;
   return -1;
+}
+
+/** Score strip above the board: a bar + value per column, the column being searched outlined, the pick in accent. */
+function ColumnScores({ scores, probe, chosen }: { scores: (number | null)[] | null; probe: number; chosen: number }) {
+  const finite = (scores ?? []).filter((v): v is number => v !== null && Math.abs(v) < WIN_SCORE);
+  const span = Math.max(1, ...finite.map((v) => Math.abs(v)));
+  return (
+    <div
+      className="mb-1 grid gap-1 px-1 sm:gap-1.5 sm:px-2.5"
+      style={{ gridTemplateColumns: `repeat(${COLS}, var(--cell))` }}
+      aria-label="AI column scores"
+      role="list"
+    >
+      {Array.from({ length: COLS }, (_, c) => {
+        const v = scores?.[c] ?? null;
+        const h = v === null ? 0 : Math.abs(v) >= WIN_SCORE ? 1 : Math.abs(v) / span;
+        const pick = c === chosen && v !== null;
+        return (
+          <div key={c} role="listitem" className={`flex h-9 flex-col items-center justify-end gap-1 rounded-sm ${probe === c ? "ring-1 ring-ink/50" : ""}`}>
+            {v !== null && (
+              <>
+                <motion.span
+                  className={`w-[30%] rounded-sm ${pick ? "bg-accent" : v >= 0 ? "bg-muted" : "bg-line-strong"}`}
+                  initial={{ height: 0 }}
+                  animate={{ height: Math.max(2, h * 14) }}
+                  transition={{ duration: 0.2, ease: EASE }}
+                />
+                <span className={`text-[10px] leading-none tabular-nums ${pick ? "text-accent" : "text-muted"}`}>{fmtCol(v)}</span>
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
