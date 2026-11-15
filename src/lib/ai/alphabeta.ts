@@ -57,7 +57,20 @@ function evaluate(b: Board, me: Disc): number {
 
 const ORDER = [3, 2, 4, 1, 5, 0, 6]; // centre-first move ordering = more cut-offs
 
-export type ABResult = { col: number; score: number; nodes: number; pruned: number; ms: number };
+export type ABResult = {
+  col: number;
+  score: number;
+  nodes: number;
+  pruned: number;
+  ms: number;
+  /** exact minimax value of each column (null = full); > 0 favours the AI */
+  scores: (number | null)[];
+  /** the order the root columns were searched in (centre first) */
+  order: number[];
+};
+
+/** Scores at or beyond this magnitude mean a forced win / loss was found. */
+export const WIN_SCORE = 100000;
 
 export function bestColumn(board: Board, depth: number): ABResult {
   const t0 = performance.now();
@@ -100,17 +113,21 @@ export function bestColumn(board: Board, depth: number): ABResult {
     }
   };
 
+  // Each root column gets a full window so its value is exact (the UI shows every column's score);
+  // pruning still happens everywhere below the root.
   let col = ORDER.find((c) => b[0][c] === 0) ?? 0;
   let best = -Infinity;
-  let alpha = -Infinity;
+  const scores: (number | null)[] = Array(COLS).fill(null);
+  const order: number[] = [];
   for (const c of ORDER) {
     if (b[0][c] !== 0) continue;
     const r = dropRow(b, c);
     b[r][c] = 2;
-    const s = search(depth - 1, alpha, Infinity, false);
+    const s = search(depth - 1, -Infinity, Infinity, false);
     b[r][c] = 0;
+    scores[c] = s;
+    order.push(c);
     if (s > best) { best = s; col = c; }
-    alpha = Math.max(alpha, best);
   }
-  return { col, score: best, nodes, pruned, ms: performance.now() - t0 };
+  return { col, score: best, nodes, pruned, ms: performance.now() - t0, scores, order };
 }

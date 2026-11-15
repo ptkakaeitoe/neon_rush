@@ -116,15 +116,29 @@ export type MoveStat = { move: number; visits: number; winRate: number };
 export type MctsResult = { move: number; simulations: number; ms: number; moves: MoveStat[]; winRate: number };
 
 /**
- * Best move for `player` within `budgetMs` (and at most `maxIter` simulations).
- * Returns per-move visit counts / win rates so the UI can show what the search found.
+ * Stepwise MCTS so the UI can show the search live: call `run(ms)` repeatedly (e.g. one slice per
+ * animation frame) and read `snapshot()` in between.
  */
-export function mctsMove(board: Board, player: Disc, budgetMs: number, maxIter = Infinity, c = Math.SQRT2): MctsResult {
-  const t0 = performance.now();
+export function createMcts(board: Board, player: Disc, c = Math.SQRT2) {
   const root = newNode(board, -1, null, player);
   let sims = 0;
+  let spent = 0;
 
-  while (sims < maxIter && performance.now() - t0 < budgetMs) {
+  const run = (sliceMs: number, maxIter = Infinity) => {
+    const t0 = performance.now();
+    while (sims < maxIter && performance.now() - t0 < sliceMs) iterate();
+    spent += performance.now() - t0;
+  };
+
+  const snapshot = (): MctsResult => {
+    const moves: MoveStat[] = root.children
+      .map((ch) => ({ move: ch.move, visits: ch.visits, winRate: ch.visits ? ch.wins / ch.visits : 0 }))
+      .sort((a, b) => b.visits - a.visits);
+    const best = moves[0] ?? { move: -1, visits: 0, winRate: 0 };
+    return { move: best.move, simulations: sims, ms: spent, moves, winRate: best.winRate };
+  };
+
+  function iterate() {
     // 1. select
     let node = root;
     let b = board;
@@ -163,9 +177,12 @@ export function mctsMove(board: Board, player: Disc, budgetMs: number, maxIter =
     }
   }
 
-  const moves: MoveStat[] = root.children
-    .map((ch) => ({ move: ch.move, visits: ch.visits, winRate: ch.visits ? ch.wins / ch.visits : 0 }))
-    .sort((a, b) => b.visits - a.visits);
-  const best = moves[0] ?? { move: -1, visits: 0, winRate: 0 };
-  return { move: best.move, simulations: sims, ms: performance.now() - t0, moves, winRate: best.winRate };
+  return { run, snapshot };
+}
+
+/** One-shot search: best move for `player` within `budgetMs` (and at most `maxIter` simulations). */
+export function mctsMove(board: Board, player: Disc, budgetMs: number, maxIter = Infinity): MctsResult {
+  const m = createMcts(board, player);
+  m.run(budgetMs, maxIter);
+  return m.snapshot();
 }
