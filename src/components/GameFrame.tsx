@@ -7,6 +7,7 @@ import { type GameId, useGameStats } from "@/lib/stats";
 import { type Outcome, useArcade } from "./ArcadeProvider";
 import { DifficultySlider } from "./DifficultySlider";
 import { PixelButton } from "./ui/PixelButton";
+import { CoinOverlay, type Starter } from "./ui/CoinFlip";
 import { CountUp, RecordRow } from "./ui/Stats";
 
 export type Stat = { label: string; value: number | React.ReactNode; format?: (n: number) => string };
@@ -50,6 +51,7 @@ export function GameFrame({
   onReset,
   below,
   fullWidthBoard = false,
+  coin,
   children,
 }: {
   gameId: GameId;
@@ -76,6 +78,8 @@ export function GameFrame({
   below?: React.ReactNode;
   /** board measures its own width (maze) — give it the full column instead of shrink-wrapping */
   fullWidthBoard?: boolean;
+  /** coin flip deciding who starts; the overlay covers the board while `flipping` */
+  coin?: { first: Starter; flipping: boolean; round: number };
   children: React.ReactNode;
 }) {
   const { go, difficulty, play } = useArcade();
@@ -163,8 +167,9 @@ export function GameFrame({
       <div className="mt-10 grid grid-cols-1 items-start gap-10 lg:mt-12 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-16">
         {/* board column: left-aligned with the title */}
         <div className="flex min-w-0 flex-col items-start">
-          <div style={{ viewTransitionName: `board-${gameId}` }} className={fullWidthBoard ? "w-full" : "max-w-full"}>
+          <div style={{ viewTransitionName: `board-${gameId}` }} className={`relative ${fullWidthBoard ? "w-full" : "max-w-full"}`}>
             {children}
+            <AnimatePresence>{coin?.flipping && <CoinOverlay first={coin.first} round={coin.round} />}</AnimatePresence>
           </div>
 
           {/* below the board: key hints while playing; after the result modal closes, a compact summary + replay */}

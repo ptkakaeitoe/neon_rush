@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { type Board, bestColumn, COLS, dropRow, emptyBoard, findWin, WIN_SCORE } from "@/lib/ai/alphabeta";
 import { type Outcome, useArcade } from "../ArcadeProvider";
 import { GameFrame } from "../GameFrame";
+import { useCoinFlip } from "../ui/CoinFlip";
 import { Replay, type ReplayStep } from "../ui/Replay";
 
 const DEPTH = { easy: 2, medium: 3, hard: 5, unbeatable: 7 } as const;
@@ -35,6 +36,9 @@ export function ConnectFour() {
   const [colScores, setColScores] = useState<(number | null)[] | null>(null);
   const [probeCol, setProbeCol] = useState(-1);
   const [showThinking, setShowThinking] = useState(true);
+  // coin flip decides the first round's starter, then it alternates; the AI opens if it starts
+  const coin = useCoinFlip((first) => first === "ai" && setAiTurn(true));
+  const restartCoin = coin.restart;
 
   const finish = useCallback((b: Board) => {
     const w = findWin(b);
@@ -50,7 +54,7 @@ export function ConnectFour() {
   }, []);
 
   const drop = (col: number) => {
-    if (aiTurn || result || replayAt !== null) return;
+    if (coin.flipping || aiTurn || result || replayAt !== null) return;
     const r = dropRow(board, col);
     if (r < 0) return;
     const nb = board.map((row) => [...row]) as Board;
@@ -118,15 +122,16 @@ export function ConnectFour() {
     setReplayAt(null);
     setColScores(null);
     setProbeCol(-1);
+    restartCoin();
     play("click");
-  }, [play]);
+  }, [play, restartCoin]);
 
   const view = replayAt !== null ? history[replayAt] : null;
   const shown = view ? view.board : board;
   const win = findWin(shown);
   const winCells = new Set(win?.cells.map(([r, c]) => `${r}-${c}`));
   const marker = view ? (view.by === 2 ? [dropRowOf(view.board, view.col), view.col] : null) : lastAi;
-  const interactive = !aiTurn && !result && replayAt === null;
+  const interactive = !coin.flipping && !aiTurn && !result && replayAt === null;
   const ghostRow = hover !== null && interactive ? dropRow(board, hover) : -1;
 
   const resultMessage =
@@ -149,7 +154,8 @@ export function ConnectFour() {
       gameId="connect4"
       title="Connect Four"
       algo="α-β pruning"
-      status={result ? "Round over" : aiTurn ? "AI is searching" : "Your turn. Drop a disc."}
+      status={coin.flipping ? (coin.round === 0 ? "Flipping a coin to decide who starts" : "Taking turns: switching who starts") : result ? "Round over" : aiTurn ? "AI is searching" : "Your turn. Drop a disc."}
+      coin={coin}
       tone={result ? "done" : aiTurn ? "ai" : "you"}
       inProgress={history.length > 0 && !result}
       result={result}

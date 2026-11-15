@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { type Board, count, createMcts, type Disc, initialBoard, isOver, legalMoves, type MctsResult, type MoveStat, play } from "@/lib/ai/othello";
 import { type Outcome, useArcade } from "../ArcadeProvider";
 import { GameFrame } from "../GameFrame";
+import { useCoinFlip } from "../ui/CoinFlip";
 import { coord, gridKeyDown } from "../ui/gridKeys";
 
 // thinking budget per level; easy also plays a random legal move some of the time
@@ -40,7 +41,10 @@ export function Othello() {
   const [passNote, setPassNote] = useState<string | null>(null);
   const [moves, setMoves] = useState(0);
 
-  const legal = turn === 1 && !result ? legalMoves(board, 1) : [];
+  // coin flip decides the first round's starter, then it alternates; the AI opens if it starts
+  const coin = useCoinFlip((first) => first === "ai" && setTurn(2));
+  const restartCoin = coin.restart;
+  const legal = turn === 1 && !result && !coin.flipping ? legalMoves(board, 1) : [];
   const { you, ai } = count(board);
 
   const settle = useCallback((b: Board) => {
@@ -71,7 +75,7 @@ export function Othello() {
   );
 
   const place = (idx: number) => {
-    if (turn !== 1 || result || !legal.includes(idx)) return;
+    if (coin.flipping || turn !== 1 || result || !legal.includes(idx)) return;
     sfx("drop");
     apply(board, idx, 1);
   };
@@ -128,8 +132,9 @@ export function Othello() {
     setPassNote(null);
     setLive(null);
     setMoves(0);
+    restartCoin();
     sfx("click");
-  }, [sfx]);
+  }, [sfx, restartCoin]);
 
   const aiTurn = turn === 2 && !result;
   const resultMessage =
@@ -141,7 +146,8 @@ export function Othello() {
       gameId="othello"
       title="Othello"
       algo="MCTS"
-      status={result ? "Round over" : aiTurn ? "AI is simulating" : passNote ?? "Your turn. You play green."}
+      status={coin.flipping ? (coin.round === 0 ? "Flipping a coin to decide who starts" : "Taking turns: switching who starts") : result ? "Round over" : aiTurn ? "AI is simulating" : passNote ?? "Your turn. You play green."}
+      coin={coin}
       tone={result ? "done" : aiTurn ? "ai" : "you"}
       inProgress={moves > 0 && !result}
       result={result}

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { aiShot, allSunk, type Heat, K, N, randomFleet, type Ship, shoot } from "@/lib/ai/battleship";
 import { type Outcome, useArcade } from "../ArcadeProvider";
 import { GameFrame } from "../GameFrame";
+import { useCoinFlip } from "../ui/CoinFlip";
 import { coord, gridKeyDown } from "../ui/gridKeys";
 
 const LEVEL = {
@@ -47,10 +48,13 @@ export function Battleship() {
   const aiSunk = sunkCells(aiFleet, myHits);
   const mySunk = sunkCells(myFleet, aiHitSet);
   const myShipCells = new Set(myFleet.flatMap((s) => s.cells));
-  const started = myShots.size > 0;
+  const started = myShots.size > 0 || aiShots.size > 0;
+  // coin flip decides the first round's starter, then it alternates; the AI fires first if it starts
+  const coin = useCoinFlip((first) => first === "ai" && setTurn("ai"));
+  const restartCoin = coin.restart;
 
   const fire = (idx: number) => {
-    if (turn !== "you" || result || myShots.has(idx)) return;
+    if (coin.flipping || turn !== "you" || result || myShots.has(idx)) return;
     const r = shoot(aiFleet, myHits, idx);
     const next = new Map(myShots).set(idx, r.hit ? "hit" : "miss");
     setMyShots(next);
@@ -112,8 +116,9 @@ export function Battleship() {
     setLastAi(-1);
     setAiming(-1);
     setOdds(0);
+    restartCoin();
     sfx("click");
-  }, [sfx]);
+  }, [sfx, restartCoin]);
 
   const shuffle = () => {
     if (started) return;
@@ -133,7 +138,16 @@ export function Battleship() {
       gameId="battleship"
       title="Battleship"
       algo="probability map"
-      status={result ? "Round over" : aiTurn ? "AI is updating its heat map" : started ? "Your turn. Fire at enemy waters." : "Pick a cell in enemy waters to fire."}
+      status={
+        coin.flipping ? (coin.round === 0 ? "Flipping a coin to decide who starts" : "Taking turns: switching who starts") : result
+          ? "Round over"
+          : aiTurn
+            ? "AI is updating its heat map"
+            : started
+              ? "Your turn. Fire at enemy waters."
+              : "Pick a cell in enemy waters to fire."
+      }
+      coin={coin}
       tone={result ? "done" : aiTurn ? "ai" : "you"}
       inProgress={started && !result}
       result={result}

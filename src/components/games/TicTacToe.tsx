@@ -6,6 +6,7 @@ import { bestMove, type Cell, winner } from "@/lib/ai/minimax";
 import { type Outcome, useArcade } from "../ArcadeProvider";
 import { GameFrame } from "../GameFrame";
 import { PieceO, PieceX } from "../ui/Pieces";
+import { useCoinFlip } from "../ui/CoinFlip";
 import { Replay, type ReplayStep } from "../ui/Replay";
 
 const DEPTH = { easy: 1, medium: 2, hard: 3, unbeatable: Infinity } as const;
@@ -134,6 +135,9 @@ export function TicTacToe() {
   const [showScores, setShowScores] = useState(true);
   const [history, setHistory] = useState<Step[]>([]);
   const [replayAt, setReplayAt] = useState<number | null>(null);
+  // coin flip decides the first round's starter, then it alternates; the AI opens if it starts
+  const coin = useCoinFlip((first) => first === "ai" && setAiTurn(true));
+  const restartCoin = coin.restart;
 
   const win = winner(board);
 
@@ -151,7 +155,7 @@ export function TicTacToe() {
   }, []);
 
   const click = (i: number) => {
-    if (board[i] || aiTurn || result) return;
+    if (coin.flipping || board[i] || aiTurn || result) return;
     const nb = [...board];
     nb[i] = "X";
     setBoard(nb);
@@ -212,8 +216,9 @@ export function TicTacToe() {
     setProbing(-1);
     setHistory([]);
     setReplayAt(null);
+    restartCoin();
     play("click");
-  }, [play]);
+  }, [play, restartCoin]);
 
   // 1–9 on the numpad layout place a piece
   useEffect(() => {
@@ -263,7 +268,8 @@ export function TicTacToe() {
       gameId="tictactoe"
       title="Tic-Tac-Toe"
       algo="minimax"
-      status={result ? "Round over" : aiTurn ? "AI is thinking" : "Your turn. You play X."}
+      status={coin.flipping ? (coin.round === 0 ? "Flipping a coin to decide who starts" : "Taking turns: switching who starts") : result ? "Round over" : aiTurn ? "AI is thinking" : "Your turn. You play X."}
+      coin={coin}
       tone={result ? "done" : aiTurn ? "ai" : "you"}
       inProgress={board.some(Boolean) && !result}
       result={result}
@@ -326,7 +332,7 @@ export function TicTacToe() {
         probing={view ? -1 : probing}
         lastAi={view ? (view.by === "O" ? view.move : -1) : lastAi}
         winLine={shownWin?.line ?? null}
-        interactive={!aiTurn && !result && replayAt === null}
+        interactive={!coin.flipping && !aiTurn && !result && replayAt === null}
         onCell={click}
       />
     </GameFrame>
