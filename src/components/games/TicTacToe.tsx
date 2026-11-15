@@ -1,13 +1,14 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
-import { bestMove, type Cell, winner } from "@/lib/ai/minimax";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { bestMove, type Cell, expectedLine, winner } from "@/lib/ai/minimax";
 import { type Outcome, useArcade } from "../ArcadeProvider";
 import { GameFrame } from "../GameFrame";
 import { PieceO, PieceX } from "../ui/Pieces";
 import { useCoinFlip } from "../ui/CoinFlip";
 import { Replay, type ReplayStep } from "../ui/Replay";
+import { ThinkTree, type TreeStep, toneOf } from "../ui/ThinkTree";
 
 const DEPTH = { easy: 1, medium: 2, hard: 3, unbeatable: Infinity } as const;
 const BLUNDER = { easy: 0.4, medium: 0.2, hard: 0.1, unbeatable: 0 } as const;
@@ -20,7 +21,26 @@ const NUMPAD: Record<string, number> = { "7": 0, "8": 1, "9": 2, "4": 3, "5": 4,
 const CELL_NAME = ["Top-left corner", "Top edge", "Top-right corner", "Left edge", "Center", "Right edge", "Bottom-left corner", "Bottom edge", "Bottom-right corner"];
 
 type Scores = (number | null)[];
-type Step = { board: Cell[]; move: number; by: "X" | "O"; scores: Scores | null };
+const SHORT = ["TL", "T", "TR", "L", "C", "R", "BL", "B", "BR"];
+
+/** One AI decision: the board it searched, every candidate's score, and the move it played. */
+type Thought = { before: Cell[]; scores: Scores; played: number; depth: number };
+type Step = { board: Cell[]; move: number; by: "X" | "O"; scores: Scores | null; thought?: Thought };
+
+/** 26px board thumbnail for the search tree; `hi` marks the move just made. */
+function MiniBoard({ board, hi }: { board: Cell[]; hi: number }) {
+  return (
+    <span className="grid h-[26px] w-[26px] shrink-0 grid-cols-3 gap-px rounded-[2px] bg-line-strong p-px" aria-hidden>
+      {board.map((v, i) => (
+        <span key={i} className={`flex items-center justify-center ${i === hi ? "bg-white/[0.16]" : "bg-bg"}`}>
+          {v && <span className={`h-[4px] w-[4px] ${v === "X" ? "bg-accent" : "rounded-full bg-ink"}`} />}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+const withMove = (b: Cell[], i: number, p: "X" | "O") => b.map((v, k) => (k === i ? p : v));
 
 const fmtScore = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : "0");
 const scoreColor = (n: number) => (n > 0 ? "text-accent" : n === 0 ? "text-ink" : "text-muted");
@@ -135,6 +155,8 @@ export function TicTacToe() {
   const [showScores, setShowScores] = useState(true);
   const [history, setHistory] = useState<Step[]>([]);
   const [replayAt, setReplayAt] = useState<number | null>(null);
+  const [thought, setThought] = useState<Thought | null>(null);
+  const [treeSel, setTreeSel] = useState(-1);
   // coin flip decides the first round's starter, then it alternates; the AI opens if it starts
   const coin = useCoinFlip((first) => first === "ai" && setAiTurn(true));
   const restartCoin = coin.restart;
@@ -177,12 +199,15 @@ export function TicTacToe() {
     const commit = () => {
       const nb = [...board];
       nb[move] = "O";
+      const t: Thought = { before: board, scores: res.scores, played: move, depth: DEPTH[difficulty] };
+      setThought(t);
+      setTreeSel(move);
       setProbing(-1);
       setScores(res.scores);
       setNodes((n) => n + res.nodes);
       setLastAi(move);
       setBoard(nb);
-      setHistory((h) => [...h, { board: nb, move, by: "O", scores: res.scores }]);
+      setHistory((h) => [...h, { board: nb, move, by: "O", scores: res.scores, thought: t }]);
       play("ai");
       setAiTurn(false);
       finish(nb);
@@ -216,6 +241,8 @@ export function TicTacToe() {
     setProbing(-1);
     setHistory([]);
     setReplayAt(null);
+    setThought(null);
+    setTreeSel(-1);
     restartCoin();
     play("click");
   }, [play, restartCoin]);
@@ -256,6 +283,65 @@ export function TicTacToe() {
           ? "Draw. Minimax can't be beaten on Max, so this is a perfect game."
           : "Draw. Neither side found a way through."
         : "Minimax found a forced win.";
+
+  // search tree: while the AI thinks, its candidates fill in live; afterwards, the line under the selected move
+  const shownThought = view
+    ? history.slice(0, (replayAt ?? 0) + 1).reverse().find((h) => h.thought)?.thought ?? null
+    : aiTurn
+      ? null
+      : thought;
+  const treeBefore = aiTurn && !view ? board : shownThought?.before ?? null;
+  const treeScores = aiTurn && !view ? scores : shownThought?.scores ?? null;
+  const sel = shownThought ? (shownThought.scores[treeSel] != null ? treeSel : shownThought.played) : -1;
+  const line = useMemo(() => (shownThought && sel >= 0 ? expectedLine(shownThought.before, sel, shownThought.depth) : null), [shownThought, sel]);
+  const treeSteps: TreeStep[] | null = line
+    ? line.steps.map((st) => ({
+        who: st.by === "O" ? "ai" : "you",
+        label: CELL_NAME[st.move].toLowerCase(),
+        score: fmtScore(st.score),
+        tone: toneOf(st.score),
+        mini: <MiniBoard board={st.board} hi={st.move} />,
+        options: st.options.map((o) => ({ key: o.move, label: SHORT[o.move], score: fmtScore(o.score), tone: toneOf(o.score) })),
+        pick: st.move,
+      }))
+    : null;
+  const treeEnd = line
+    ? line.end === "O"
+      ? { text: "AI gets three in a row", tone: "good" as const }
+      : line.end === "X"
+        ? { text: "You get three in a row", tone: "bad" as const }
+        : line.end === "draw"
+          ? { text: "Board full: a draw, scored 0", tone: "even" as const }
+          : { text: `Depth limit (${shownThought?.depth} ply): can't see further, scored 0`, tone: "even" as const }
+    : null;
+  const tree =
+    showScores && !coin.flipping && treeBefore && treeScores ? (
+      <ThinkTree
+        title="Minimax tree"
+        roots={treeBefore
+          .map((v, i) => (v ? null : i))
+          .filter((i): i is number => i !== null)
+          .map((i) => {
+            const sc = treeScores[i];
+            return {
+              key: i,
+              label: SHORT[i],
+              score: sc === null || sc === undefined ? null : fmtScore(sc),
+              tone: toneOf(sc ?? 0),
+              mini: <MiniBoard board={withMove(treeBefore, i, "O")} hi={i} />,
+              title: CELL_NAME[i],
+            };
+          })}
+        probing={aiTurn && !view ? probing : -1}
+        played={shownThought?.played ?? -1}
+        selected={sel}
+        onSelect={setTreeSel}
+        steps={treeSteps}
+        end={treeEnd}
+        runId={shownThought ? `${history.indexOf(history.find((h) => h.thought === shownThought)!)}-${sel}` : "thinking"}
+        legend="Score = 10 minus the moves until a win; positive favours the AI. At each step minimax scores every reply, takes the best one for the side to move, and passes that score back up the line."
+      />
+    ) : null;
 
   const replaySteps: ReplayStep[] = history.map((h, n) => ({
     label: `${h.by === "X" ? "You" : "AI"} → ${CELL_NAME[h.move].toLowerCase()}`,
@@ -325,6 +411,7 @@ export function TicTacToe() {
         </label>
       }
       howItWorks="Minimax plays out every future board and picks the move with the best guaranteed outcome. While it thinks, each empty cell shows its score for the AI: positive means good for the AI."
+      tree={tree}
       below={
         result && history.length > 0 ? (
           <Replay steps={replaySteps} at={replayAt} onChange={setReplayAt} />

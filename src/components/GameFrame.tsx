@@ -50,6 +50,7 @@ export function GameFrame({
   keyHints,
   onReset,
   below,
+  tree,
   fullWidthBoard = false,
   coin,
   children,
@@ -76,6 +77,8 @@ export function GameFrame({
   onReset: () => void;
   /** rendered under the result card, e.g. the post-game replay */
   below?: React.ReactNode;
+  /** the AI's search tree, shown under the board */
+  tree?: React.ReactNode;
   /** board measures its own width (maze) — give it the full column instead of shrink-wrapping */
   fullWidthBoard?: boolean;
   /** coin flip deciding who starts; the overlay covers the board while `flipping` */
@@ -134,7 +137,7 @@ export function GameFrame({
   const heading = resultTitle ?? (result === "win" ? "You win" : result === "lose" ? "You lost" : "Draw");
 
   return (
-    <div className={`${CONTAINER} flex-1 pb-16`}>
+    <div className={`${CONTAINER} flex-1 pb-28`}>
       <header className="pt-2 sm:pt-6">
         <button
           onClick={() => go({ name: "hub" })}
@@ -172,23 +175,12 @@ export function GameFrame({
             <AnimatePresence>{coin?.flipping && <CoinOverlay first={coin.first} round={coin.round} phase={coin.phase} onToss={coin.toss} onSkip={coin.skip} />}</AnimatePresence>
           </div>
 
-          {/* below the board: key hints while playing; after the result modal closes, a compact summary + replay */}
+          {/* below the board: key hints while playing; after the result modal closes, the replay */}
           <div className="mt-6 min-h-10 w-full max-w-xl">
-            {result && !modalOpen ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <p className={`font-display text-xl font-semibold ${result === "win" ? "text-accent" : "text-ink"}`}>{heading}</p>
-                <PixelButton variant="primary" size="sm" onClick={onReset}>
-                  Play again
-                </PixelButton>
-                <PixelButton variant="ghost" size="sm" onClick={() => setModalOpen(true)}>
-                  Details
-                </PixelButton>
-              </div>
-            ) : (
-              !result && <p className="hidden text-[11px] text-muted sm:block">{keyHints} · R restart · Esc all games</p>
-            )}
+            {!result && <p className="hidden text-[11px] text-muted sm:block">{keyHints} · R restart · Esc all games</p>}
             {result && !modalOpen && below}
           </div>
+          {tree && <div className="mt-6 w-full max-w-xl">{tree}</div>}
         </div>
 
         {/* side panel: one left edge and one right edge, set by the difficulty control's width */}
@@ -258,6 +250,31 @@ export function GameFrame({
           </AnimatePresence>
         </aside>
       </div>
+
+      {/* after the modal closes: a small floating card keeps the result and the next step in reach */}
+      <AnimatePresence>
+        {result && !modalOpen && (
+          <motion.div
+            role="region"
+            aria-label="Round result"
+            className="fixed inset-x-0 bottom-5 z-40 flex justify-center px-4"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.2, ease: EASE }}
+          >
+            <div className="flex items-center gap-3 rounded-md border border-line-strong bg-bg py-2 pl-5 pr-2 shadow-2xl shadow-black/60">
+              <p className={`font-display text-lg font-semibold ${result === "win" ? "text-accent" : "text-ink"}`}>{heading}</p>
+              <PixelButton variant="primary" size="sm" onClick={onReset}>
+                Play again
+              </PixelButton>
+              <PixelButton variant="ghost" size="sm" onClick={() => setModalOpen(true)}>
+                Details
+              </PixelButton>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {result && modalOpen && (
