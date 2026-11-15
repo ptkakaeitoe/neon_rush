@@ -139,7 +139,13 @@ export function Battleship() {
       title="Battleship"
       algo="probability map"
       status={
-        coin.flipping ? (coin.round === 0 ? "Flipping a coin to decide who starts" : "Taking turns: switching who starts") : result
+        coin.flipping
+        ? coin.phase === "ready"
+          ? "Flip the coin to decide who starts"
+          : coin.round === 0
+            ? "Flipping the coin"
+            : "Taking turns: switching who starts"
+        : result
           ? "Round over"
           : aiTurn
             ? "AI is updating its heat map"

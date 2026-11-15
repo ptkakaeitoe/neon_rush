@@ -16,18 +16,22 @@ const EDGE_LAYERS = 8;
 
 const toss = (): Starter => (Math.random() < 0.5 ? "you" : "ai");
 
+export type CoinPhase = "ready" | "tossing";
+
 /**
- * Who starts each round. A coin toss decides the first round (on mount); after that the
- * starter alternates every time `restart()` is called, so neither side always goes first.
- * `onDone(first)` fires once per round when the intro ends, or immediately on `skip()`.
+ * Who starts each round.
+ * Round 0: the coin waits (`phase: "ready"`) until the player calls `toss()` (click / Space / Enter),
+ * then animates and lands. Later rounds: the starter alternates automatically after `restart()`.
+ * `onDone(first)` fires once per round when the intro ends, or immediately on `skip()` mid-toss.
  */
 export function useCoinFlip(onDone: (first: Starter) => void) {
   const reduce = useReducedMotion();
   // games mount only after client-side navigation, so a random first toss is safe
-  const [state, setState] = useState<{ first: Starter; flipping: boolean; round: number }>(() => ({
+  const [state, setState] = useState<{ first: Starter; flipping: boolean; round: number; phase: CoinPhase }>(() => ({
     first: toss(),
     flipping: true,
     round: 0,
+    phase: "ready",
   }));
   const spins = state.round === 0 && !reduce; // only the opening toss is animated
   const done = useRef(onDone);
@@ -43,20 +47,27 @@ export function useCoinFlip(onDone: (first: Starter) => void) {
     done.current(first);
   }, []);
 
+  // the timer only runs once the coin is actually in the air
   useEffect(() => {
-    if (!state.flipping) return;
+    if (!state.flipping || state.phase !== "tossing") return;
     const t = setTimeout(() => finish(state.round, state.first), spins ? FLIP_MS : STILL_MS);
     return () => clearTimeout(t);
-  }, [state.flipping, state.round, state.first, spins, finish]);
+  }, [state.flipping, state.phase, state.round, state.first, spins, finish]);
 
-  // next round: the other side starts
+  /** Throw the coin (round 0 waits for this). */
+  const tossCoin = useCallback(() => setState((s) => (s.phase === "ready" ? { ...s, phase: "tossing" } : s)), []);
+
+  // next round: the other side starts, no click needed (restarting before the first flip keeps the coin waiting)
   const restart = useCallback(
-    () => setState((s) => ({ first: s.first === "you" ? "ai" : "you", flipping: true, round: s.round + 1 })),
+    () =>
+      setState((s) =>
+        s.phase === "ready" ? s : { first: s.first === "you" ? "ai" : "you", flipping: true, round: s.round + 1, phase: "tossing" },
+      ),
     [],
   );
   const skip = useCallback(() => finish(state.round, state.first), [finish, state.round, state.first]);
 
-  return { first: state.first, flipping: state.flipping, round: state.round, restart, skip };
+  return { first: state.first, flipping: state.flipping, round: state.round, phase: state.phase, toss: tossCoin, restart, skip };
 }
 
 /* ---------------- the coin ---------------- */
@@ -99,16 +110,32 @@ function Edge() {
 
 /**
  * Overlay shown over the board before each round.
- * Round 0: the coin is tossed (arc, tumble, shadow, bounce, wobble). Later rounds: it drops in
- * already showing who starts ("taking turns"). Click or any key skips.
+ * Round 0: the coin waits until you click it (or press Space / Enter), then it's tossed (arc,
+ * tumble, shadow, bounce, wobble) and only then shows the result. Click / any key skips the toss.
+ * Later rounds: it drops in already showing who starts ("taking turns").
  */
-export function CoinOverlay({ first, round, onSkip }: { first: Starter; round: number; onSkip: () => void }) {
+export function CoinOverlay({
+  first,
+  round,
+  phase,
+  onToss,
+  onSkip,
+}: {
+  first: Starter;
+  round: number;
+  phase: CoinPhase;
+  onToss: () => void;
+  onSkip: () => void;
+}) {
   const { play } = useArcade();
-  const still = useReducedMotion() || round > 0;
+  const reduce = useReducedMotion();
+  const still = reduce || round > 0;
+  const ready = phase === "ready";
   const land = TURNS * 360 + (first === "ai" ? 180 : 0); // AI is the back face
 
-  // flick on toss, clink on landing
+  // flick on toss, clink on landing (nothing while the coin is waiting)
   useEffect(() => {
+    if (ready) return;
     if (still) {
       play("coin");
       return;
@@ -116,22 +143,34 @@ export function CoinOverlay({ first, round, onSkip }: { first: Starter; round: n
     play("move");
     const t = setTimeout(() => play("coin"), TOSS_S * 0.72 * 1000);
     return () => clearTimeout(t);
-  }, [still, play]);
+  }, [ready, still, play]);
 
-  // any key skips the intro
+  // waiting: Space / Enter toss (Esc still leaves the game). In the air: any key skips.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (ready) {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          onToss();
+        }
+        return;
+      }
       e.stopImmediatePropagation();
       onSkip();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onSkip]);
+  }, [ready, onToss, onSkip]);
 
   // keyframe times: 0 toss → .34 apex → .72 lands → .82 bounce top → 1 settled
   const times = [0, 0.34, 0.72, 0.82, 1];
-  const tossAnim = still
+  const tossAnim = ready
+    ? reduce
+      ? { y: 0, rotateX: 0, scale: 1 }
+      : { y: [0, -5, 0], rotateX: [0, 8, 0], scale: 1 } // idle: gently hovering, YOU face up
+    : still
     ? { y: [-24, 0], rotateX: [land - 20, land], scale: 1 }
     : {
         y: [0, -150, 0, -14, 0],
@@ -139,25 +178,32 @@ export function CoinOverlay({ first, round, onSkip }: { first: Starter; round: n
         scale: [1, 1.22, 1, 1.03, 1],
       };
   const phases: Transition["ease"] = ["easeOut", "easeIn", "easeOut", "easeIn"];
-  const tossTransition: Transition = still
-    ? { duration: 0.3, ease: [0.22, 1, 0.36, 1] }
-    : { duration: TOSS_S, times, ease: phases };
+  const tossTransition: Transition = ready
+    ? { duration: 2.4, repeat: Infinity, ease: "easeInOut" }
+    : still
+      ? { duration: 0.3, ease: [0.22, 1, 0.36, 1] }
+      : { duration: TOSS_S, times, ease: phases };
 
   return (
     <motion.div
       key={round}
-      className="absolute inset-0 z-20 flex cursor-pointer flex-col items-center justify-center bg-bg/80 backdrop-blur-[1px]"
+      className="absolute inset-0 z-20 flex cursor-pointer flex-col items-center justify-center bg-bg/85"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
-      onClick={onSkip}
+      onClick={ready ? onToss : onSkip}
       role="status"
       aria-live="polite"
-      aria-label={`${round === 0 ? "Coin flip: " : "Taking turns: "}${first === "you" ? "you go first" : "the AI goes first"}`}
+      aria-label={
+        ready
+          ? "Coin flip: click the coin or press Space to flip"
+          : `${round === 0 ? "Coin flip: " : "Taking turns: "}${first === "you" ? "you go first" : "the AI goes first"}`
+      }
     >
       <div className="relative flex flex-col items-center" style={{ perspective: 700 }}>
         <motion.div
+          key={phase}
           className="relative"
           style={{ width: COIN, height: COIN, transformStyle: "preserve-3d" }}
           initial={false}
@@ -173,22 +219,41 @@ export function CoinOverlay({ first, round, onSkip }: { first: Starter; round: n
           className="mt-3 h-2 rounded-[50%] bg-black"
           style={{ width: COIN * 0.8 }}
           initial={false}
-          animate={still ? { opacity: 0.55, scaleX: 1 } : { opacity: [0.55, 0.15, 0.55, 0.45, 0.55], scaleX: [1, 0.45, 1, 0.9, 1] }}
-          transition={still ? { duration: 0.3 } : { duration: TOSS_S, times, ease: phases }}
+          animate={ready || still ? { opacity: 0.55, scaleX: 1 } : { opacity: [0.55, 0.15, 0.55, 0.45, 0.55], scaleX: [1, 0.45, 1, 0.9, 1] }}
+          transition={ready || still ? { duration: 0.3 } : { duration: TOSS_S, times, ease: phases }}
           aria-hidden
         />
       </div>
 
-      <motion.p
-        className="mt-5 text-sm"
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: still ? 0.15 : TOSS_S * 0.8, duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <span className={first === "you" ? "text-accent" : "text-ink"}>{first === "you" ? "You go first" : "AI goes first"}</span>
-        {round > 0 && <span className="text-muted"> · taking turns</span>}
-      </motion.p>
-      <p className="mt-2 text-[11px] text-faint">Click or press any key to skip</p>
+      {ready ? (
+        <>
+          <button
+            autoFocus
+            onClick={(e) => {
+              e.stopPropagation();
+              onToss();
+            }}
+            className="mt-5 h-9 rounded-md bg-accent px-4 text-[13px] font-medium text-accent-ink transition-[filter] duration-150 hover:brightness-110"
+          >
+            Flip the coin
+          </button>
+          <p className="mt-2 text-[11px] text-muted">Click the coin or press Space · decides who goes first</p>
+        </>
+      ) : (
+        <>
+          <motion.p
+            key={`result-${round}`}
+            className="mt-5 text-sm"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: still ? 0.15 : TOSS_S * 0.8, duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <span className={first === "you" ? "text-accent" : "text-ink"}>{first === "you" ? "You go first" : "AI goes first"}</span>
+            {round > 0 && <span className="text-muted"> · taking turns</span>}
+          </motion.p>
+          <p className="mt-2 text-[11px] text-faint">Click or press any key to skip</p>
+        </>
+      )}
     </motion.div>
   );
 }

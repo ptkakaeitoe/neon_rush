@@ -268,7 +268,13 @@ export function TicTacToe() {
       gameId="tictactoe"
       title="Tic-Tac-Toe"
       algo="minimax"
-      status={coin.flipping ? (coin.round === 0 ? "Flipping a coin to decide who starts" : "Taking turns: switching who starts") : result ? "Round over" : aiTurn ? "AI is thinking" : "Your turn. You play X."}
+      status={coin.flipping
+        ? coin.phase === "ready"
+          ? "Flip the coin to decide who starts"
+          : coin.round === 0
+            ? "Flipping the coin"
+            : "Taking turns: switching who starts"
+        : result ? "Round over" : aiTurn ? "AI is thinking" : "Your turn. You play X."}
       coin={coin}
       tone={result ? "done" : aiTurn ? "ai" : "you"}
       inProgress={board.some(Boolean) && !result}

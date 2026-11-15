@@ -146,7 +146,13 @@ export function Othello() {
       gameId="othello"
       title="Othello"
       algo="MCTS"
-      status={coin.flipping ? (coin.round === 0 ? "Flipping a coin to decide who starts" : "Taking turns: switching who starts") : result ? "Round over" : aiTurn ? "AI is simulating" : passNote ?? "Your turn. You play green."}
+      status={coin.flipping
+        ? coin.phase === "ready"
+          ? "Flip the coin to decide who starts"
+          : coin.round === 0
+            ? "Flipping the coin"
+            : "Taking turns: switching who starts"
+        : result ? "Round over" : aiTurn ? "AI is simulating" : passNote ?? "Your turn. You play green."}
       coin={coin}
       tone={result ? "done" : aiTurn ? "ai" : "you"}
       inProgress={moves > 0 && !result}

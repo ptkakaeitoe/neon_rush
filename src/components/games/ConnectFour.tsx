@@ -154,7 +154,13 @@ export function ConnectFour() {
       gameId="connect4"
       title="Connect Four"
       algo="α-β pruning"
-      status={coin.flipping ? (coin.round === 0 ? "Flipping a coin to decide who starts" : "Taking turns: switching who starts") : result ? "Round over" : aiTurn ? "AI is searching" : "Your turn. Drop a disc."}
+      status={coin.flipping
+        ? coin.phase === "ready"
+          ? "Flip the coin to decide who starts"
+          : coin.round === 0
+            ? "Flipping the coin"
+            : "Taking turns: switching who starts"
+        : result ? "Round over" : aiTurn ? "AI is searching" : "Your turn. Drop a disc."}
       coin={coin}
       tone={result ? "done" : aiTurn ? "ai" : "you"}
       inProgress={history.length > 0 && !result}
