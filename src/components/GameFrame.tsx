@@ -3,7 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { CONTAINER } from "@/lib/layout";
-import { type GameId, useGameStats } from "@/lib/stats";
+import { DIFFICULTY_LABEL, type GameId, useGameStats } from "@/lib/stats";
 import { type Outcome, useArcade } from "./ArcadeProvider";
 import { DifficultySlider } from "./DifficultySlider";
 import { PixelButton } from "./ui/PixelButton";
@@ -87,7 +87,6 @@ export function GameFrame({
 }) {
   const { go, difficulty, play } = useArcade();
   const statsApi = useGameStats(gameId);
-  const [howOpen, setHowOpen] = useState(false);
   const reduce = useReducedMotion();
   // the result pops up as a modal shortly after the game ends (so the final move / win line is seen first)
   const [modalOpen, setModalOpen] = useState(false);
@@ -138,36 +137,58 @@ export function GameFrame({
 
   return (
     <div className={`${CONTAINER} flex-1 pb-28`}>
-      <header className="pt-2 sm:pt-6">
-        <button
-          onClick={() => go({ name: "hub" })}
-          className="label-pixel -ml-1 inline-flex h-9 items-center gap-2 rounded px-1 transition-colors duration-150 hover:text-ink"
-        >
-          <span aria-hidden>←</span> All games
-        </button>
+      <header className="flex flex-col gap-6 pt-2 sm:pt-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <button
+            onClick={() => go({ name: "hub" })}
+            className="label-pixel -ml-1 inline-flex h-8 items-center gap-2 rounded px-1 transition-colors duration-150 hover:text-ink"
+          >
+            <span aria-hidden>←</span> All games
+          </button>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <h1 className="font-display text-4xl font-semibold sm:text-5xl">{title}</h1>
+            <span className="chip">{algo}</span>
+          </div>
+          <p className="mt-3 flex items-center gap-2.5 text-sm text-ink" aria-live="polite">
+            <motion.span
+              className={`h-2 w-2 rounded-full ${tone === "done" ? "bg-faint" : tone === "ai" ? "bg-ink" : "bg-accent"}`}
+              animate={tone === "done" ? { opacity: 1 } : { opacity: [1, 0.25, 1] }}
+              transition={{ repeat: Infinity, duration: tone === "ai" ? 0.6 : 1.4 }}
+            />
+            <span>
+              {status}
+              {tone === "ai" && <Dots />}
+            </span>
+          </p>
+        </div>
 
-        <div className="mt-4 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <h1 className="font-display text-4xl font-semibold sm:text-5xl">{title}</h1>
-              <span className="chip">{algo}</span>
+        {/* match controls: your record at this level, difficulty, restart */}
+        <div className="flex w-full flex-col gap-3 sm:w-[360px]">
+          <div className="flex items-baseline justify-between text-[13px]">
+            <span className="label">Record · {DIFFICULTY_LABEL[difficulty]}</span>
+            <RecordRow gameId={gameId} difficulty={difficulty} />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <DifficultySlider fill inProgress={inProgress} onRestart={onReset} />
             </div>
-            <p className="mt-3 flex items-center gap-2.5 text-sm text-ink" aria-live="polite">
-              <motion.span
-                className={`h-2 w-2 rounded-full ${tone === "done" ? "bg-faint" : tone === "ai" ? "bg-ink" : "bg-accent"}`}
-                animate={tone === "done" ? { opacity: 1 } : { opacity: [1, 0.25, 1] }}
-                transition={{ repeat: Infinity, duration: tone === "ai" ? 0.6 : 1.4 }}
-              />
-              <span>
-                {status}
-                {tone === "ai" && <Dots />}
-              </span>
-            </p>
+            <button
+              onClick={onReset}
+              aria-label="Restart (R)"
+              title="Restart (R)"
+              className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-md border border-line-strong text-lg text-muted transition-colors duration-150 hover:bg-white/[0.05] hover:text-ink"
+            >
+              ↻
+            </button>
           </div>
         </div>
       </header>
 
-      <div className="mt-10 grid grid-cols-1 items-start gap-10 lg:mt-12 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-16">
+      <div
+        className={`mt-8 grid grid-cols-1 items-start gap-10 border-t border-line pt-8 lg:mt-10 lg:gap-12 lg:pt-10 ${
+          fullWidthBoard ? "lg:grid-cols-[minmax(0,1fr)_380px]" : "lg:grid-cols-[auto_minmax(0,1fr)]"
+        }`}
+      >
         {/* board column: left-aligned with the title */}
         <div className="flex min-w-0 flex-col items-start">
           <div style={{ viewTransitionName: `board-${gameId}` }} className={`relative ${fullWidthBoard ? "w-full" : "max-w-full"}`}>
@@ -176,78 +197,33 @@ export function GameFrame({
           </div>
 
           {/* below the board: key hints while playing; after the result modal closes, the replay */}
-          <div className="mt-6 min-h-10 w-full max-w-xl">
-            {!result && <p className="hidden text-[11px] text-muted sm:block">{keyHints} · R restart · Esc all games</p>}
+          <div className="mt-5 w-full max-w-xl">
+            {!result && <p className="hidden text-[11px] text-faint sm:block">{keyHints} · R restart · Esc all games</p>}
             {result && !modalOpen && below}
           </div>
-          {tree && <div className="mt-6 w-full max-w-xl">{tree}</div>}
         </div>
 
-        {/* side panel: one left edge and one right edge, set by the difficulty control's width */}
-        <aside aria-label="Difficulty, record and AI insight" className="h-fit lg:mr-12 lg:w-[300px]">
-          <div className="flex items-center gap-2 lg:relative lg:block">
-            <div className="min-w-0 flex-1">
-              <DifficultySlider fill inProgress={inProgress} onRestart={onReset} />
-            </div>
-            {/* restart sits outside the panel's width, to the right of the control */}
-            <button
-              onClick={onReset}
-              aria-label="Restart (R)"
-              title="Restart (R)"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-lg text-muted transition-colors duration-150 hover:bg-white/[0.05] hover:text-ink lg:absolute lg:left-full lg:top-0 lg:ml-2"
-            >
-              ↻
-            </button>
+        {/* AI panel: what the AI is doing, in numbers, words and (where there is one) its search tree */}
+        <aside aria-label="Inside the AI" className="w-full min-w-0 lg:max-w-[500px] lg:justify-self-end lg:border-l lg:border-line lg:pl-12">
+          <div className="flex min-h-8 items-center justify-between gap-4 text-[13px]">
+            <p className="label">Inside the AI</p>
+            <div className="min-w-0">{toggles}</div>
           </div>
 
-          <div className="mt-6">
-            <RecordRow gameId={gameId} difficulty={difficulty} />
-          </div>
-
-          <div className="my-6 h-px bg-line" />
-
-          <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-3 text-[13px]" aria-label="How the AI thinks">
+          <dl className="mt-4 grid grid-cols-3 divide-x divide-line rounded-md border border-line" aria-label="AI stats">
             {stats.slice(0, 3).map((s) => (
-              <div key={s.label} className="contents">
-                <dt className="text-muted">{s.label}</dt>
-                <dd className="text-right text-ink">
+              <div key={s.label} className="flex min-w-0 flex-col-reverse justify-end gap-1 px-3 py-3 sm:px-4">
+                <dt className="text-[11px] leading-snug text-muted">{s.label}</dt>
+                <dd className="font-display text-xl font-semibold text-ink">
                   {typeof s.value === "number" ? <CountUp value={s.value} format={s.format} /> : <span className="tabular-nums">{s.value}</span>}
                 </dd>
               </div>
             ))}
           </dl>
 
-          <div className="my-6 h-px bg-line" />
+          <p className="mt-4 text-[13px] leading-relaxed text-muted">{howItWorks}</p>
 
-          <div className="flex min-h-8 items-center justify-between gap-4 text-[13px]">
-            <div className="min-w-0">{toggles}</div>
-            <button
-              onClick={() => setHowOpen((o) => !o)}
-              aria-expanded={howOpen}
-              aria-controls={`how-${gameId}`}
-              className="flex shrink-0 items-center gap-1.5 rounded text-muted transition-colors duration-150 hover:text-ink"
-            >
-              How it works
-              <span aria-hidden className={`inline-block transition-transform duration-200 ease-out ${howOpen ? "rotate-90" : ""}`}>
-                ›
-              </span>
-            </button>
-          </div>
-          <AnimatePresence initial={false}>
-            {howOpen && (
-              <motion.div
-                id={`how-${gameId}`}
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: EASE }}
-                className="overflow-hidden"
-              >
-                <p className="pt-3 text-[13px] leading-relaxed text-muted">{howItWorks}</p>
-                {details && <div className="pt-4">{details}</div>}
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {(tree || details) && <div className="mt-8">{tree ?? details}</div>}
         </aside>
       </div>
 
