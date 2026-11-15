@@ -79,7 +79,7 @@ function Board({
               onClick={() => onCell(i)}
               disabled={!interactive || !!v}
               aria-label={`Cell ${[7, 8, 9, 4, 5, 6, 1, 2, 3][i]}${v ? `, ${v}` : ", empty"}`}
-              className="group relative flex h-24 w-24 items-center justify-center rounded-md border border-line bg-surface transition-[background-color,opacity] duration-200 ease-out enabled:hover:bg-white/[0.04] sm:h-28 sm:w-28"
+              className="group relative flex h-24 w-24 items-center justify-center rounded-md border border-line bg-surface transition-[background-color,opacity] duration-200 ease-out enabled:hover:bg-white/[0.04] sm:h-28 sm:w-28 lg:h-32 lg:w-32"
               style={{ opacity: dim ? 0.35 : 1 }}
             >
               {/* AI thinking: tint by how good the move is for the AI, outline the cell being evaluated */}
@@ -311,8 +311,8 @@ export function TicTacToe() {
       : line.end === "X"
         ? { text: "You get three in a row", tone: "bad" as const }
         : line.end === "draw"
-          ? { text: "Board full: a draw, scored 0", tone: "even" as const }
-          : { text: `Depth limit (${shownThought?.depth} ply): can't see further, scored 0`, tone: "even" as const }
+          ? { text: "Board full: draw, 0", tone: "even" as const }
+          : { text: `Depth limit, ${shownThought?.depth} ply: scored 0`, tone: "even" as const }
     : null;
   const tree =
     showScores && !coin.flipping && treeBefore && treeScores ? (
@@ -339,7 +339,6 @@ export function TicTacToe() {
         steps={treeSteps}
         end={treeEnd}
         runId={shownThought ? `${history.indexOf(history.find((h) => h.thought === shownThought)!)}-${sel}` : "thinking"}
-        legend="Score = 10 minus the moves until a win; positive favours the AI. At each step minimax scores every reply, takes the best one for the side to move, and passes that score back up the line."
       />
     ) : null;
 
@@ -407,10 +406,15 @@ export function TicTacToe() {
       toggles={
         <label className="flex cursor-pointer items-center gap-2 text-ink">
           <input type="checkbox" checked={showScores} onChange={(e) => setShowScores(e.target.checked)} />
-          Show AI thinking
+          Show thinking
         </label>
       }
-      howItWorks="Minimax plays out every future board and picks the move with the best guaranteed outcome. While it thinks, each empty cell shows its score for the AI: positive means good for the AI."
+      howItWorks={
+        <>
+          <p>Minimax plays out every future board and picks the move with the best guaranteed outcome.</p>
+          <p className="text-faint">Score = 10 minus the moves until a win; positive favours the AI. At each step minimax scores every reply, takes the best one for the side to move, and passes that score back up the line.</p>
+        </>
+      }
       tree={tree}
       below={
         result && history.length > 0 ? (

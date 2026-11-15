@@ -8,7 +8,7 @@ import { type Outcome, useArcade } from "./ArcadeProvider";
 import { DifficultySlider } from "./DifficultySlider";
 import { PixelButton } from "./ui/PixelButton";
 import { type CoinPhase, CoinOverlay, type Starter } from "./ui/CoinFlip";
-import { CountUp, RecordRow } from "./ui/Stats";
+import { CountUp, Scoreboard } from "./ui/Stats";
 
 export type Stat = { label: string; value: number | React.ReactNode; format?: (n: number) => string };
 
@@ -66,8 +66,8 @@ export function GameFrame({
   stats: Stat[];
   /** view toggles for the panel footer (e.g. "Show move scores") */
   toggles?: React.ReactNode;
-  /** one-sentence explanation, inside the collapsed "How it works" disclosure */
-  howItWorks: string;
+  /** short explanation: inline when the panel has nothing else to show, otherwise in the "How it works" pop-over */
+  howItWorks: React.ReactNode;
   /** optional extra AI detail shown inside the disclosure (candidate moves, prediction bars…) */
   details?: React.ReactNode;
   result: Outcome | null;
@@ -137,39 +137,17 @@ export function GameFrame({
 
   return (
     <div className={`${CONTAINER} flex-1 pb-28`}>
-      <header className="flex flex-col gap-6 pt-2 sm:pt-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
+      <header className="pt-1 sm:pt-3">
+        {/* toolbar: navigation left, match settings right */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={() => go({ name: "hub" })}
             className="label-pixel -ml-1 inline-flex h-8 items-center gap-2 rounded px-1 transition-colors duration-150 hover:text-ink"
           >
             <span aria-hidden>←</span> All games
           </button>
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <h1 className="font-display text-4xl font-semibold sm:text-5xl">{title}</h1>
-            <span className="chip">{algo}</span>
-          </div>
-          <p className="mt-3 flex items-center gap-2.5 text-sm text-ink" aria-live="polite">
-            <motion.span
-              className={`h-2 w-2 rounded-full ${tone === "done" ? "bg-faint" : tone === "ai" ? "bg-ink" : "bg-accent"}`}
-              animate={tone === "done" ? { opacity: 1 } : { opacity: [1, 0.25, 1] }}
-              transition={{ repeat: Infinity, duration: tone === "ai" ? 0.6 : 1.4 }}
-            />
-            <span>
-              {status}
-              {tone === "ai" && <Dots />}
-            </span>
-          </p>
-        </div>
-
-        {/* match controls: your record at this level, difficulty, restart */}
-        <div className="flex w-full flex-col gap-3 sm:w-[360px]">
-          <div className="flex items-baseline justify-between text-[13px]">
-            <span className="label">Record · {DIFFICULTY_LABEL[difficulty]}</span>
-            <RecordRow gameId={gameId} difficulty={difficulty} />
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <div className="min-w-0 flex-1 sm:w-[300px] sm:flex-none">
               <DifficultySlider fill inProgress={inProgress} onRestart={onReset} />
             </div>
             <button
@@ -182,10 +160,32 @@ export function GameFrame({
             </button>
           </div>
         </div>
+
+        {/* title + status, scoreboard opposite */}
+        <div className="mt-6 flex flex-wrap items-end justify-between gap-x-10 gap-y-5 sm:mt-8">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <h1 className="font-display text-4xl font-semibold sm:text-5xl">{title}</h1>
+              <span className="chip">{algo}</span>
+            </div>
+            <p className="mt-3 flex items-center gap-2.5 text-sm text-ink" aria-live="polite">
+              <motion.span
+                className={`h-2 w-2 rounded-full ${tone === "done" ? "bg-faint" : tone === "ai" ? "bg-ink" : "bg-accent"}`}
+                animate={tone === "done" ? { opacity: 1 } : { opacity: [1, 0.25, 1] }}
+                transition={{ repeat: Infinity, duration: tone === "ai" ? 0.6 : 1.4 }}
+              />
+              <span>
+                {status}
+                {tone === "ai" && <Dots />}
+              </span>
+            </p>
+          </div>
+          <Scoreboard gameId={gameId} difficulty={difficulty} levelLabel={DIFFICULTY_LABEL[difficulty]} />
+        </div>
       </header>
 
       <div
-        className={`mt-8 grid grid-cols-1 items-start gap-10 border-t border-line pt-8 lg:mt-10 lg:gap-12 lg:pt-10 ${
+        className={`mt-10 grid grid-cols-1 items-start gap-10 lg:mt-12 lg:gap-12 ${
           fullWidthBoard ? "lg:grid-cols-[minmax(0,1fr)_380px]" : "lg:grid-cols-[auto_minmax(0,1fr)]"
         }`}
       >
@@ -203,27 +203,28 @@ export function GameFrame({
           </div>
         </div>
 
-        {/* AI panel: what the AI is doing, in numbers, words and (where there is one) its search tree */}
+        {/* AI panel: stats strip, then the AI's live picture (tree / details), or the explanation when there's none */}
         <aside aria-label="Inside the AI" className="w-full min-w-0 lg:max-w-[500px] lg:justify-self-end lg:border-l lg:border-line lg:pl-12">
           <div className="flex min-h-8 items-center justify-between gap-4 text-[13px]">
-            <p className="label">Inside the AI</p>
-            <div className="min-w-0">{toggles}</div>
+            <p className="label whitespace-nowrap">Inside the AI</p>
+            <div className="flex items-center gap-4 whitespace-nowrap">
+              {(tree || details) && <HowItWorks id={`how-${gameId}`}>{howItWorks}</HowItWorks>}
+              {toggles}
+            </div>
           </div>
 
-          <dl className="mt-4 grid grid-cols-3 divide-x divide-line rounded-md border border-line" aria-label="AI stats">
-            {stats.slice(0, 3).map((s) => (
-              <div key={s.label} className="flex min-w-0 flex-col-reverse justify-end gap-1 px-3 py-3 sm:px-4">
+          <dl className="mt-3 grid grid-cols-3 border-y border-line py-3" aria-label="AI stats">
+            {stats.slice(0, 3).map((s, i) => (
+              <div key={s.label} className={`flex min-w-0 flex-col-reverse justify-end gap-1 ${i ? "border-l border-line pl-4" : ""}`}>
                 <dt className="text-[11px] leading-snug text-muted">{s.label}</dt>
-                <dd className="font-display text-xl font-semibold text-ink">
+                <dd className="font-display text-lg font-semibold leading-none text-ink">
                   {typeof s.value === "number" ? <CountUp value={s.value} format={s.format} /> : <span className="tabular-nums">{s.value}</span>}
                 </dd>
               </div>
             ))}
           </dl>
 
-          <p className="mt-4 text-[13px] leading-relaxed text-muted">{howItWorks}</p>
-
-          {(tree || details) && <div className="mt-8">{tree ?? details}</div>}
+          <div className="mt-6">{tree ?? details ?? <p className="text-[13px] leading-relaxed text-muted">{howItWorks}</p>}</div>
         </aside>
       </div>
 
@@ -356,5 +357,58 @@ function ResultModal({
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+/** "How it works" pop-over: closes on outside click or Esc (without leaving the game). */
+function HowItWorks({ id, children }: { id: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => root.current && !root.current.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+  return (
+    <div ref={root} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={id}
+        aria-label="How it works"
+        className={`flex h-8 items-center gap-1.5 rounded transition-colors duration-150 hover:text-ink ${open ? "text-ink" : "text-muted"}`}
+      >
+        <span aria-hidden className="flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px] leading-none">
+          i
+        </span>
+        <span className="hidden sm:inline">How it works</span>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            id={id}
+            role="dialog"
+            aria-label="How it works"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.15, ease: EASE }}
+            className="absolute right-0 top-full z-30 mt-2 w-[min(340px,calc(100vw-2rem))] space-y-2 rounded-md border border-line-strong bg-bg p-4 text-[13px] leading-relaxed text-muted shadow-2xl shadow-black/60"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

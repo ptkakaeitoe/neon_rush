@@ -194,7 +194,7 @@ export function MazeEscape() {
       toggles={
         <label className="flex cursor-pointer items-center gap-2 text-ink">
           <input type="checkbox" checked={showSearch} onChange={(e) => setShowSearch(e.target.checked)} />
-          Show AI thinking
+          Show thinking
         </label>
       }
       howItWorks="Every step, the hunter re-plans the shortest path to you with A*, ranking tiles by f = g + h."

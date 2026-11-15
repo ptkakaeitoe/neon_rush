@@ -168,7 +168,7 @@ export function Othello() {
       toggles={
         <label className="flex cursor-pointer items-center gap-2 text-ink">
           <input type="checkbox" checked={showThinking} onChange={(e) => setShowThinking(e.target.checked)} />
-          Show AI thinking
+          Show thinking
         </label>
       }
       howItWorks="MCTS plays thousands of random games from each move and picks the one that wins most often. While it thinks, each candidate square shows its win rate (%), shaded by how many games it has simulated there."

@@ -222,8 +222,8 @@ export function ConnectFour() {
       : line.end === 1
         ? { text: "You connect four", tone: "bad" as const }
         : line.end === "draw"
-          ? { text: "Board full: a draw", tone: "even" as const }
-          : { text: `Depth limit (${shownThought?.depth} ply): scored by the board heuristic, ${fmtCol(lastScore)}`, tone: toneOf(lastScore) }
+          ? { text: "Board full: draw", tone: "even" as const }
+          : { text: `Depth limit, ${shownThought?.depth} ply: heuristic ${fmtCol(lastScore)}`, tone: toneOf(lastScore) }
     : null;
   const tree =
     showThinking && !coin.flipping && treeBefore && treeScores ? (
@@ -243,7 +243,6 @@ export function ConnectFour() {
         steps={treeSteps}
         end={treeEnd}
         runId={shownThought ? `${history.findIndex((h) => h.thought === shownThought)}-${sel}` : "thinking"}
-        legend="Positive favours the AI. ≤ / ≥: alpha-beta stopped as soon as it proved that reply was worse, so only a bound is known. Dashed “cut”: never searched at all."
       />
     ) : null;
 
@@ -301,10 +300,15 @@ export function ConnectFour() {
       toggles={
         <label className="flex cursor-pointer items-center gap-2 text-ink">
           <input type="checkbox" checked={showThinking} onChange={(e) => setShowThinking(e.target.checked)} />
-          Show AI thinking
+          Show thinking
         </label>
       }
-      howItWorks="Alpha-beta searches ahead like minimax but skips branches that can't change the decision. While it thinks, each column shows its score for the AI, tried centre-first."
+      howItWorks={
+        <>
+          <p>Alpha-beta searches ahead like minimax but skips branches that cannot change the decision. It tries the centre columns first.</p>
+          <p className="text-faint">Positive favours the AI. ≤ / ≥: alpha-beta stopped as soon as it proved that reply was worse, so only a bound is known. Dashed “cut”: never searched at all.</p>
+        </>
+      }
       tree={tree}
       below={history.length > 0 && result ? <Replay steps={steps} at={replayAt} onChange={setReplayAt} /> : null}
     >

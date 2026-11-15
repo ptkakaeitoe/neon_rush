@@ -168,7 +168,7 @@ export function Battleship() {
       toggles={
         <label className="flex cursor-pointer items-center gap-2 text-ink">
           <input type="checkbox" checked={showHeat} onChange={(e) => setShowHeat(e.target.checked)} />
-          Show AI thinking
+          Show thinking
         </label>
       }
       howItWorks="The AI counts every way your remaining ships could still fit, weights the ones touching its hits, and fires where the most placements overlap. The green glow on your fleet is that count; the ring is where it's about to fire."

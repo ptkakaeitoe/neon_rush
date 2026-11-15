@@ -26,7 +26,7 @@ export function ResultStrip({ results, max }: { results: Result[]; max: number }
 /* ---------------- W · D · L ---------------- */
 
 /** Games that can end in a draw show the D column; maze and battleship always end in a win or a loss. */
-const CAN_DRAW: Record<GameId, boolean> = { tictactoe: true, connect4: true, maze: false, othello: true, battleship: false };
+export const CAN_DRAW: Record<GameId, boolean> = { tictactoe: true, connect4: true, maze: false, othello: true, battleship: false };
 
 const n = (v: number, one: string, many = `${one}s`) => `${v} ${v === 1 ? one : many}`;
 
@@ -106,4 +106,27 @@ export function CountUp({ value, format = (n) => Math.round(n).toLocaleString() 
   }, [value, reduce]);
 
   return <span className="tabular-nums">{format(shown)}</span>;
+}
+
+/** Game header scoreboard at the selected difficulty: You · Draws · AI, big tabular numbers. */
+export function Scoreboard({ gameId, difficulty, levelLabel }: { gameId: GameId; difficulty: Difficulty; levelLabel: string }) {
+  const { byDifficulty } = useGameStats(gameId);
+  const s = byDifficulty[difficulty];
+  const cols: { k: string; v: number; you?: boolean }[] = [
+    { k: "You", v: s.w, you: true },
+    ...(CAN_DRAW[gameId] ? [{ k: "Draws", v: s.d }] : []),
+    { k: "AI", v: s.l },
+  ];
+  return (
+    <dl className="flex items-end gap-6" aria-label={`Record on ${levelLabel}`} title={`Your record on ${levelLabel}`}>
+      {cols.map((c) => (
+        <div key={c.k} className="flex flex-col-reverse items-center gap-1">
+          <dt className="text-[11px] text-muted">{c.k}</dt>
+          <dd className={`font-display text-3xl font-semibold leading-none tabular-nums ${c.you && c.v > 0 ? "text-accent" : "text-ink"}`}>
+            <CountUp value={c.v} />
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
 }

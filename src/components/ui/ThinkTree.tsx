@@ -30,7 +30,6 @@ export function ThinkTree({
   onSelect,
   steps,
   end,
-  legend,
   runId,
 }: {
   title: string;
@@ -44,19 +43,15 @@ export function ThinkTree({
   /** null while the AI is still searching */
   steps: TreeStep[] | null;
   end: { text: string; tone: Tone } | null;
-  legend: ReactNode;
   /** changes whenever a new line is shown, to replay the reveal */
   runId: string;
 }) {
   return (
     <section aria-label={title}>
-      <div className="flex items-baseline justify-between gap-4">
-        <p className="label">{title}</p>
-        {played >= 0 && <p className="text-[11px] text-faint">Pick a move to see its line</p>}
-      </div>
+      <p className="text-[11px] text-muted">{title}</p>
 
       {/* level 0: every move the AI considered */}
-      <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1" role="listbox" aria-label="AI's candidate moves">
+      <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1" role="listbox" aria-label="AI's candidate moves: pick one to see its line">
         {roots.map((r) => {
           const sel = r.key === selected && played >= 0;
           return (
@@ -66,7 +61,7 @@ export function ThinkTree({
               aria-selected={sel}
               disabled={played < 0}
               onClick={() => onSelect(r.key)}
-              title={r.title}
+              title={played >= 0 ? `${r.title ?? r.label}: show this line` : r.title}
               className={`relative flex min-w-11 flex-1 flex-col items-center gap-1 rounded-md border px-1 py-1.5 transition-colors duration-150 ${
                 sel ? "border-accent bg-accent/[0.06]" : "border-line enabled:hover:border-line-strong"
               } ${probing === r.key ? "ring-1 ring-ink/60" : ""}`}
@@ -154,7 +149,6 @@ export function ThinkTree({
         </motion.ol>
       </AnimatePresence>
 
-      <p className="mt-3 text-[11px] leading-relaxed text-faint">{legend}</p>
     </section>
   );
 }
