@@ -226,7 +226,6 @@ export function CoinOverlay({
       </div>
 
       {ready ? (
-        <>
           <button
             autoFocus
             onClick={(e) => {
@@ -237,22 +236,17 @@ export function CoinOverlay({
           >
             Flip the coin
           </button>
-          <p className="mt-2 text-[11px] text-muted">Click the coin or press Space · decides who goes first</p>
-        </>
       ) : (
-        <>
-          <motion.p
-            key={`result-${round}`}
-            className="mt-5 text-sm"
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: still ? 0.15 : TOSS_S * 0.8, duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <span className={first === "you" ? "text-accent" : "text-ink"}>{first === "you" ? "You go first" : "AI goes first"}</span>
-            {round > 0 && <span className="text-muted"> · taking turns</span>}
-          </motion.p>
-          <p className="mt-2 text-[11px] text-faint">Click or press any key to skip</p>
-        </>
+        <motion.p
+          key={`result-${round}`}
+          className="mt-5 text-sm"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: still ? 0.15 : TOSS_S * 0.8, duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <span className={first === "you" ? "text-accent" : "text-ink"}>{first === "you" ? "You go first" : "AI goes first"}</span>
+          {round > 0 && <span className="text-muted"> · taking turns</span>}
+        </motion.p>
       )}
     </motion.div>
   );
